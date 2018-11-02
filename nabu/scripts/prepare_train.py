@@ -144,7 +144,7 @@ def main(expdir, recipe, computing, resume, duplicates, sweep_flag):
 	if computing == 'standard':
 
 	    #manualy set for machine
-	    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+	    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 	    train(clusterfile=None,
 		  job_name='local',

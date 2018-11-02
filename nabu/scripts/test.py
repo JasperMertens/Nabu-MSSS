@@ -11,7 +11,6 @@ from nabu.neuralnetworks.evaluators import evaluator_factory
 from nabu.neuralnetworks.components.hooks import LoadAtBegin, SummaryHook
 from nabu.postprocessing.reconstructors import reconstructor_factory
 from nabu.postprocessing.scorers import scorer_factory
-from nabu.postprocessing.postprocessors import postprocessor_factory
 import json
 import time
 import pdb
@@ -183,29 +182,6 @@ def test(expdir):
 		result_summary = scorer.summarize()
 		with open(os.path.join(expdir, 'results_%s_%s_summary.json'%(task,score_type)), 'w') as fid:
 		    json.dump(result_summary,fid)
-
-	if postprocessor_cfg != None: # && postprocessing is not done yet for this task
-	    task_postprocessor_cfg = dict(postprocessor_cfg.items(task))
-	    task_processor_cfg = dict(postprocessor_cfg.items('processor_'+task))
-	    postprocess_types = task_postprocessor_cfg['postprocess_type'].split(' ')
-	    
-	    for postprocess_type in postprocess_types:
-		#create the postprocessor
-		postprocessor = postprocessor_factory.factory(postprocess_type)(
-		    conf=task_postprocessor_cfg,
-		    proc_conf = task_processor_cfg,
-		    evalconf=evaluator_cfg,
-		    expdir=expdir,
-		    rec_dir=rec_dir,
-		    task=task)
-
-		#run the postprocessor
-		postprocessor()
-		
-		postprocessor.matlab_eng.quit()
-
-
-
 
 if __name__ == '__main__':
 

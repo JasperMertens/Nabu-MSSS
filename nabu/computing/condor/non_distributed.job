@@ -12,7 +12,7 @@ Requirements = (CUDACapability >= 3.0)\
   && has_avx\
   &&(CUDAGlobalMemoryMb >= $(memory))\
   &&(machine =!= LastRemoteHost)\
-#  && (machine != "spchcl24.esat.kuleuven.be")\
+  && (machine != "spchcl24.esat.kuleuven.be")\
 #  && (machine != "spchcl23.esat.kuleuven.be")\
   && (machine != "cancer.esat.kuleuven.be")\
   && (machine != "libra.esat.kuleuven.be")\
@@ -23,11 +23,16 @@ Requirements = (CUDACapability >= 3.0)\
   && (machine != "topaz.esat.kuleuven.be")\
   && (machine != "pyrite.esat.kuleuven.be")\
   && (machine != "jade.esat.kuleuven.be")\
+  && (machine != "bandai.esat.kuleuven.be")\
+  && (machine != "nickeline.esat.kuleuven.be")\
+#  && (machine != "estragon.esat.kuleuven.be")\
 #  && (machine != "molder.esat.kuleuven.be")\
 # machines below should be re-added \
 #  && (machine != "andromeda.esat.kuleuven.be") \
 # machines below are removed since using 8 cpus is faster\\
-  && (machine != "tiger.esat.kuleuven.be")
+  && (machine != "tiger.esat.kuleuven.be")\
+  && (machine != "molder.esat.kuleuven.be")\
+  && (machine != "spchcl21.esat.kuleuven.be")
   
   
 #  && (machine != "andromeda.esat.kuleuven.be") \
@@ -48,7 +53,6 @@ Notification = Error
 
 initialdir = .
 
-#Run he build cluster script for the parameter server
 Arguments = "python -u $(script) --expdir=$(expdir)"
 # This is the executable or script I want to run
 executable = nabu/computing/condor/create_environment.sh
@@ -61,7 +65,7 @@ Output       = $(expdir)/outputs/main.out
 #Standard error of the 'executable', in 'initialdir'
 Error        = $(expdir)/outputs/main.err
 
-priority = -8
+priority = $(condor_prio)
 
 # Queue the job
 Queue
