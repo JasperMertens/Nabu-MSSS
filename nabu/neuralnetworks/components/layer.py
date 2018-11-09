@@ -1,12 +1,15 @@
 '''@file layer.py
 Neural network layers '''
 
+import string
+
 import tensorflow as tf
 from tensorflow.python.ops.rnn import bidirectional_dynamic_rnn, dynamic_rnn
 from nabu.neuralnetworks.components import ops, rnn_cell, rnn
 from ops import capsule_initializer
 import pdb
 
+_alphabet_str=string.ascii_lowercase
 class Capsule(tf.layers.Layer):
     '''a capsule layer'''
 
@@ -144,6 +147,45 @@ class Capsule(tf.layers.Layer):
 
         return predictions, logits
 
+    def predict_slow(self, inputs):
+        '''
+        compute the predictions for the output capsules and initialize the
+        routing logits
+        args:
+            inputs: the inputs to the layer. the final two dimensions are
+                num_capsules_in and capsule_dim_in
+        returns: the output capsule predictions
+        '''
+
+        with tf.name_scope('predict'):
+
+            #number of shared dimensions
+            rank = len(inputs.shape)
+            shared = rank-2
+	  
+	    if shared > 26-4:
+	      raise 'Not enough letters in the alphabet to use Einstein notation'
+	    #input_shape = [shared (typicaly batch_size,time),Nin,Din], kernel_shape = [Nin, Din, Nout, Dout],
+	    #predictions_shape = [shared,Nin,Nout,Dout]
+	    shared_shape_str=_alphabet_str[0:shared]
+	    input_shape_str=shared_shape_str+'wx'
+	    kernel_shape_str='wxyz'
+	    output_shape_str=shared_shape_str+'wyz'
+	    ein_not='%s,%s->%s'%(input_shape_str, kernel_shape_str, output_shape_str)
+	    
+	    predictions = tf.einsum(ein_not, inputs, self.kernel)
+
+            logits = self.logits
+            for i in range(shared):
+                if predictions.shape[shared-i-1].value is None:
+                    shape = tf.shape(predictions)[shared-i-1]
+                else:
+                    shape = predictions.shape[shared-i-1].value
+                tile = [shape] + [1]*len(logits.shape)
+                logits = tf.tile(tf.expand_dims(logits, 0), tile)
+
+        return predictions, logits
+
     def cluster(self, predictions, logits):
         '''cluster the predictions into output capsules
         args:
@@ -208,7 +250,7 @@ class Capsule(tf.layers.Layer):
 
 
 class BRCapsuleLayer(object):
-    '''a BRNN layer'''
+    '''a Bidirectional recurrent capsule layer'''
 
     def __init__(self, num_capsules, capsule_dim, routing_iters=3, 
 		 activation=None, input_probability_fn=None, 
@@ -282,22 +324,23 @@ class BRCapsuleLayer(object):
             return outputs
 
 
-
-
 class BRNNLayer(object):
     '''a BRNN layer'''
 
-    def __init__(self, num_units):
+    def __init__(self, num_units, activation_fn=tf.nn.tanh, linear_out_flag=False):
         '''
         BRNNLayer constructor
 
         Args:
             num_units: The number of units in the one directon
-            layer_norm: whether layer normalization should be applied
-            recurrent_dropout: the recurrent dropout keep probability
+            activation_fn: activation function
+            linear_out_flag: if set to True, activation function will only be applied
+            to the recurrent output.
         '''
 
         self.num_units = num_units
+        self.activation_fn = activation_fn
+        self.linear_out_flag = linear_out_flag
 
     def __call__(self, inputs, sequence_length, scope=None):
         '''
@@ -319,11 +362,18 @@ class BRNNLayer(object):
 
             #create the rnn cell that will be used for the forward and backward
             #pass
-            rnn_cell_fw = tf.contrib.rnn.BasicRNNCell(
+            if self.linear_out_flag:
+		rnn_cell_type = rnn_cell.RNNCellLinearOut
+	    else:
+		rnn_cell_type = tf.contrib.rnn.BasicRNNCell
+		
+            rnn_cell_fw = rnn_cell_type(
                 num_units=self.num_units,
+                activation=self.activation_fn,
                 reuse=tf.get_variable_scope().reuse)
-            rnn_cell_bw = tf.contrib.rnn.BasicRNNCell(
-                self.num_units,
+            rnn_cell_bw = rnn_cell_type(
+                num_units=self.num_units,
+                activation=self.activation_fn,
                 reuse=tf.get_variable_scope().reuse)
                 	    
             #do the forward computation
@@ -346,6 +396,7 @@ class LSTMLayer(object):
             num_units: The number of units in the one directon
             layer_norm: whether layer normalization should be applied
             recurrent_dropout: the recurrent dropout keep probability
+            activation_fn: activation function
         '''
 
         self.num_units = num_units

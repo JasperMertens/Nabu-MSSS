@@ -1,6 +1,8 @@
 '''@file rnn_cell.py
 contains some customized rnn cells'''
 
+import string
+
 import tensorflow as tf
 from tensorflow.contrib.layers.python.layers import layers
 from tensorflow.python.layers import base as base_layer
@@ -21,6 +23,7 @@ from ops import capsule_initializer
 
 import pdb
 
+_alphabet_str=string.ascii_lowercase
 class RecCapsuleCell(rnn_cell_impl.LayerRNNCell):
   """ Combination of RNN cell with capsule cell
   
@@ -113,7 +116,7 @@ class RecCapsuleCell(rnn_cell_impl.LayerRNNCell):
       outputs = self.cluster(input_predictions, state_predictions, input_logits, state_logits)
 
       return outputs, outputs
-      
+  
   def predict(self, inputs, state):
       '''
       compute the predictions for the output capsules and initialize the
@@ -125,37 +128,27 @@ class RecCapsuleCell(rnn_cell_impl.LayerRNNCell):
 	      num_capsules and capsule_dim
       returns: the output capsule predictions
       '''
-
+      
       with tf.name_scope('predict'):
 
 	  #number of shared dimensions. Assuming this is equal for inputs and state
 	  rank = len(inputs.shape)
 	  shared = rank-2
+	  
+	  if shared > 26-4:
+	    raise 'Not enough letters in the alphabet to use Einstein notation'
 
-	  #put the input capsules as the first dimension
-	  inputs = tf.transpose(inputs, [shared] + range(shared) + [rank-1])
-	  state = tf.transpose(state, [shared] + range(shared) + [rank-1])
-
-	  #compute the predictions from the input
-	  input_predictions = tf.map_fn(
-	      fn=lambda x: tf.tensordot(x[0], x[1], [[shared], [0]]),
-	      elems=(inputs, self.input_kernel),
-	      dtype=self.dtype or tf.float32)
-
-	  #transpose back
-	  input_predictions = tf.transpose(
-	      input_predictions, range(1, shared+1)+[0]+[rank-1, rank])
-
-	  #compute the predictions from the state
-	  state_predictions = tf.map_fn(
-	      fn=lambda x: tf.tensordot(x[0], x[1], [[shared], [0]]),
-	      elems=(state, self.state_kernel),
-	      dtype=self.dtype or tf.float32)
-
-	  #transpose back
-	  state_predictions = tf.transpose(
-	      state_predictions, range(1, shared+1)+[0]+[rank-1, rank])
-
+	  #input_shape = [shared (typicaly batch size),Nin,Din], kernel_shape = [Nin, Din, Nout, Dout],
+	  #input_predictions_shape = [shared,Nin,Nout,Dout]
+	  shared_shape_str=_alphabet_str[0:shared]
+	  input_shape_str=shared_shape_str+'wx'
+	  kernel_shape_str='wxyz'
+	  output_shape_str=shared_shape_str+'wyz'
+	  ein_not='%s,%s->%s'%(input_shape_str, kernel_shape_str, output_shape_str)
+	  
+	  input_predictions = tf.einsum(ein_not, inputs, self.input_kernel)
+	  state_predictions = tf.einsum(ein_not, state, self.state_kernel)
+	  
 	  #compute the logits for the inputs
 	  input_logits = self.input_logits
 	  for i in range(shared):
@@ -309,6 +302,20 @@ class RecCapsuleCell_RecOnlyVote(RecCapsuleCell):
 	  capsules = self._activation(capsules)
 	  
       return capsules
+    
+class RNNCellLinearOut(rnn_cell_impl.BasicRNNCell):
+    """Same cell as rnn_cell_impl.BasicRNNCell, except that the activation function will
+    only be applied to the recurrent output and not the feedforward output
+    """
+    
+    def call(self, inputs, state):
+	gate_inputs = math_ops.matmul(
+	    array_ops.concat([inputs, state], 1), self._kernel)
+	gate_inputs = nn_ops.bias_add(gate_inputs, self._bias)
+	output = self._activation(gate_inputs)
+	
+	return gate_inputs, output
+    
     
 _BIAS_VARIABLE_NAME = "bias"
 _WEIGHTS_VARIABLE_NAME = "kernel"  
