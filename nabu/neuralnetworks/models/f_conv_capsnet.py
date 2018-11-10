@@ -6,7 +6,7 @@ import model
 from nabu.neuralnetworks.components import layer, ops
 
 
-class ConvCapsNet(model.Model):
+class F_ConvCapsNet(model.Model):
     '''A convolutional capsule network'''
 
     def _get_outputs(self, inputs, input_seq_length, is_training):
@@ -30,6 +30,7 @@ class ConvCapsNet(model.Model):
         routing_iters = int(self.conf['routing_iters'])
         # TODO
         kernel_size = int(self.conf['conv_kernel_size'])
+        stride = int(self.conf['stride'])
 
         # code not available for multiple inputs!!
         if len(inputs) > 1:
@@ -52,40 +53,43 @@ class ConvCapsNet(model.Model):
                 primary_capsules = tf.layers.conv1d(
                     output,
                     output_dim,
-                    kernel_size,
-                    use_bias=False
+                    kernel_size
                 )
+
+                # Include frequency dimension
                 primary_capsules = tf.reshape(
                     primary_capsules,
                     [output.shape[0].value,
                      tf.shape(output)[1],
+                     output.shape[2].value,
                      num_capsules,
                      capsule_dim]
                 )
 
                 primary_capsules = ops.squash(primary_capsules)
-                # prim_norm = ops.safe_norm(primary_capsules)
-
-                # tf.add_to_collection('image', tf.expand_dims(prim_norm, 3))
                 output = tf.identity(primary_capsules, 'primary_capsules')
 
             # non-primary capsules
             for l in range(1, int(self.conf['num_layers'])):
                 with tf.variable_scope('layer%d' % l):
                     # a capsule layer
-                    caps_layer = layer.Capsule(num_capsules=num_capsules,
+                    f_conv_caps_layer = layer.FConvCapsule(num_freq=num_capsules,
                                                capsule_dim=capsule_dim,
+                                               kernel_size=kernel_size,
+                                                stride=stride,
                                                routing_iters=routing_iters)
 
-                    output = caps_layer(output)
+                    output = f_conv_caps_layer(output)
 
                     if is_training and float(self.conf['dropout']) < 1:
                         output = tf.nn.dropout(output, float(self.conf['dropout']))
 
+            # Include frequency dimension
             output = tf.reshape(
                 output,
                 [output.shape[0].value,
                  tf.shape(output)[1],
+                 output.shape[2].value,
                  output_dim]
             )
 
