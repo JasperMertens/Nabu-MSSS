@@ -452,7 +452,16 @@ class FConvCapsule(tf.layers.Layer):
                 kernel_tiled = tf.tile(tf.expand_dims(kernel_tiled, 0), tile)
 
             #compute the predictions
+            # so the last four dimensions are
+            # [... x num_freq_out x num_capsule x num_capsule_in x capsule_dim_out]
             predictions = tf.matmul(kernel_tiled, inputs_tiled)
+            predictions = tf.reduce_sum(predictions, -3)
+
+            #transpose so the last four dimensions are
+            # [... x num_freq_out x num_capsule_in x num_capsule x capsule_dim_out]
+            predictions = tf.transpose(range(shared) + [shared] +
+                                       [shared+2] + [shared+1] +
+                                       [shared+2])
 
             logits = self.logits
             for i in range(shared):
@@ -515,6 +524,11 @@ class FConvCapsule(tf.layers.Layer):
     def compute_output_shape(self, input_shape):
         '''compute the output shape'''
 
+        if input_shape[-3].value is None:
+            raise ValueError(
+                'The number of frequencies must be defined, but saw: %s'
+                % input_shape)
+
         if input_shape[-2].value is None:
             raise ValueError(
                 'The number of capsules must be defined, but saw: %s'
@@ -524,8 +538,11 @@ class FConvCapsule(tf.layers.Layer):
                 'The capsule dimension must be defined, but saw: %s'
                 % input_shape)
 
-        return input_shape[:-2].concatenate(
-            [self.num_capsules, self.capsule_dim])
+        num_freq_in = input_shape[-3].value
+        num_freq_out = (num_freq_in-self.kernel_size+1)/self.stride
+
+        return input_shape[:-3].concatenate(
+            [num_freq_out, self.num_capsules, self.capsule_dim])
 
 class BRCapsuleLayer(object):
     '''a Bidirectional recurrent capsule layer'''
