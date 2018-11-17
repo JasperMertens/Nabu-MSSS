@@ -474,6 +474,91 @@ class FConvCapsule(tf.layers.Layer):
 
         return predictions, logits
 
+    def roll_matmul_predict(self, inputs):
+        '''
+        compute the predictions for the output capsules and initialize the
+        routing logits
+        args:
+            inputs: the inputs to the layer. the final two dimensions are
+                num_capsules_in and capsule_dim_in
+        returns: the output capsule predictions
+        '''
+
+        with tf.name_scope('roll_matmul_predict'):
+
+            num_freq_in = inputs.shape[-3].value
+            num_freq_out = (num_freq_in-self.kernel_size+1)/self.stride
+
+            #number of shared dimensions
+            rank = len(inputs.shape)
+            shared = rank-3
+
+            #expand inputs for the kernel dimension and replicate it
+            inputs = tf.expand_dims(inputs, shared+1)
+            copy = tf.identity(inputs)
+
+            #formulate the output shape of the concatenation of the frequency shifted copies
+            input_shape = tf.shape(inputs)
+            shape = tf.concat([input_shape[:shared],
+                               [num_freq_out, self.kernel_size],
+                               input_shape[shared+2:]], 0)
+
+            #concatenate the frequency shifted copies
+            half_kernel = self.kernel_size//2
+            for i in range(self.kernel_size-1):
+                inputs = tf.manip.roll(inputs, 1, shared)
+                inputs = tf.concat([inputs, copy], shared+1)
+            inputs = tf.manip.roll(inputs, -half_kernel, shared)
+
+            #because the convolution is unpadded, values at the edges are dropped
+            inputs = tf.slice(inputs, [0]*shared +
+                              [half_kernel, 0] +
+                              [0]*(rank-shared-2),
+                              shape)
+
+            #tile the inputs over the num_capsules output dimension
+            # so the last five dimensions are
+            # [... x num_freq_out x num_capsule x kernel_size x num_capsule_in x capsule_dim_in]
+            inputs = tf.expand_dims(inputs, -4)
+            multiples = [1]*shared + [1, self.num_capsules, 1, 1, 1]
+            inputs_tiled = tf.tile(inputs, multiples)
+
+            #change the capsule dimensions into column vectors
+            inputs_tiled = tf.expand_dims(inputs_tiled, -1)
+
+            #tile the kernel for every batch, time and num_freq_out
+            kernel_tiled = self.kernel
+            for i in range(shared+1):
+                if inputs_tiled.shape[shared-i].value is None:
+                    shape = tf.shape(inputs_tiled)[shared-i]
+                else:
+                    shape = inputs_tiled.shape[shared-i].value
+                tile = [shape] + [1]*len(kernel_tiled.shape)
+                kernel_tiled = tf.tile(tf.expand_dims(kernel_tiled, 0), tile)
+
+            #compute the predictions
+            # so the last four dimensions are
+            # [... x num_freq_out x num_capsule x num_capsule_in x capsule_dim_out]
+            predictions = tf.matmul(kernel_tiled, inputs_tiled)
+            predictions = tf.reduce_sum(predictions, -3)
+
+            #transpose so the last four dimensions are
+            # [... x num_freq_out x num_capsule_in x num_capsule x capsule_dim_out]
+            predictions = tf.transpose(range(shared) + [shared] +
+                                       [shared+2] + [shared+1] +
+                                       [shared+3])
+
+            logits = self.logits
+            for i in range(shared):
+                if predictions.shape[shared-i-1].value is None:
+                    shape = tf.shape(predictions)[shared-i-1]
+                else:
+                    shape = predictions.shape[shared-i-1].value
+                tile = [shape] + [1]*len(logits.shape)
+                logits = tf.tile(tf.expand_dims(logits, 0), tile)
+
+        return predictions, logits
+
     def cluster(self, predictions, logits):
         '''cluster the predictions into output capsules
         args:
