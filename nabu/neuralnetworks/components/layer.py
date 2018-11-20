@@ -515,23 +515,27 @@ class FConvCapsule(tf.layers.Layer):
             inputs = tf.manip.roll(inputs, -half_kernel, shared)
 
             #because the convolution is unpadded, values at the edges are dropped
-            inputs = tf.slice(inputs, [0]*shared +
+            inputs_split = tf.slice(inputs, [0]*shared +
                               [half_kernel, 0] +
                               [0]*(rank-shared-2),
                               shape)
 
-            #tile the inputs over the num_capsules output dimension
+           #tile the inputs over the num_capsules output dimension
             # so the last five dimensions are
-            # [... x num_freq_out x num_capsule x kernel_size x num_capsule_in x capsule_dim_in]
-            inputs = tf.expand_dims(inputs, -4)
-            multiples = [1]*shared + [1, self.num_capsules, 1, 1, 1]
-            inputs_tiled = tf.tile(inputs, multiples)
+            # [... x num_freq_out x num_capsule_in x num_capsule_out x kernel_size x capsule_dim_in]
+            inputs_split = tf.expand_dims(inputs_split, -3)
+            multiples = [1]*shared + [1, 1, self.num_capsules, 1, 1]
+            inputs_tiled = tf.tile(inputs_split, multiples)
 
             #change the capsule dimensions into column vectors
-            inputs_tiled = tf.expand_dims(inputs_tiled, -1)
+            inputs_tiled = tf.expand_dims(inputs_tiled,-1)
 
-            #tile the kernel for every batch, time and num_freq_out
-            kernel_tiled = self.kernel
+            #transpose the kernel so the dimensions are
+            # [num_capsules_in x num_capsules_out x kernel_size x capsule_dim_out x capsule_dim_in]
+            kernel = tf.transpose(self.kernel, [1, 3, 0, 4, 2])
+
+            #tile the kernel for every shared dimension (batch, time) and num_freq_out
+            kernel_tiled = kernel
             for i in range(shared+1):
                 if inputs_tiled.shape[shared-i].value is None:
                     shape = tf.shape(inputs_tiled)[shared-i]
@@ -541,17 +545,15 @@ class FConvCapsule(tf.layers.Layer):
                 kernel_tiled = tf.tile(tf.expand_dims(kernel_tiled, 0), tile)
 
             #compute the predictions
-            # so the last four dimensions are
-            # [... x num_freq_out x num_capsule x num_capsule_in x capsule_dim_out]
-            predictions = tf.matmul(kernel_tiled, inputs_tiled)
-            predictions = tf.reduce_sum(predictions, -3)
 
-            #transpose so the last four dimensions are
-            # [... x num_freq_out x num_capsule_in x num_capsule x capsule_dim_out]
-            predictions = tf.transpose(predictions, range(shared) + [shared] +
-                                       [shared+2] + [shared+1] +
-                                       [shared+3])
+            #perform matrix multiplications so the last four dimensions are
+            # [... x num_freq_out x num_capsule_in x num_capsule_out  x kernel_size x capsule_dim_out]
+            predictions = tf.squeeze(tf.matmul(kernel_tiled, inputs_tiled), -1)
 
+            #sum over the kernel_size dimension
+            predictions = tf.reduce_sum(predictions, -2)
+
+            # tile the logits for each shared dimesion (batch, time)
             logits = self.logits
             for i in range(shared):
                 if predictions.shape[shared-i-1].value is None:
@@ -609,23 +611,29 @@ class FConvCapsule(tf.layers.Layer):
             inputs = tf.squeeze(inputs, shared)
             output_shape = tf.shape(inputs)
             # output_shape[1] should equal num_freq_out if no padding
+            # reshape back to [B, T, F_out, N_in, D_in, W_f]
             inputs = tf.reshape(inputs, shape=[batch_size, -1, output_shape[1],
-                                               n_in*d_in, self.kernel_size])
-            inputs = tf.transpose()
-
+                                               n_in, d_in, self.kernel_size])
+            #transpose back so the last four dimensions are
+            #  [... x num_freq_out x num_capsule_in x kernel_size x capsule_dim_in]
+            inputs_split = tf.transpose(inputs, range(shared+2) + [shared+4, shared+3])
 
             #tile the inputs over the num_capsules output dimension
             # so the last five dimensions are
-            # [... x num_freq_out x num_capsule x kernel_size x num_capsule_in x capsule_dim_in]
-            inputs = tf.expand_dims(inputs, -4)
-            multiples = [1]*shared + [1, self.num_capsules, 1, 1, 1]
-            inputs_tiled = tf.tile(inputs, multiples)
+            # [... x num_freq_out x num_capsule_in x num_capsule_out x kernel_size x capsule_dim_in]
+            inputs_split = tf.expand_dims(inputs_split, -3)
+            multiples = [1]*shared + [1, 1, self.num_capsules, 1, 1]
+            inputs_tiled = tf.tile(inputs_split, multiples)
 
             #change the capsule dimensions into column vectors
-            inputs_tiled = tf.expand_dims(inputs_tiled, -1)
+            inputs_tiled = tf.expand_dims(inputs_tiled,-1)
 
-            #tile the kernel for every batch, time and num_freq_out
-            kernel_tiled = self.kernel
+            #transpose the kernel so the dimensions are
+            # [num_capsules_in x num_capsules_out x kernel_size x capsule_dim_out x capsule_dim_in]
+            kernel = tf.transpose(self.kernel, [1, 3, 0, 4, 2])
+
+            #tile the kernel for every shared dimension (batch, time) and num_freq_out
+            kernel_tiled = kernel
             for i in range(shared+1):
                 if inputs_tiled.shape[shared-i].value is None:
                     shape = tf.shape(inputs_tiled)[shared-i]
@@ -635,17 +643,15 @@ class FConvCapsule(tf.layers.Layer):
                 kernel_tiled = tf.tile(tf.expand_dims(kernel_tiled, 0), tile)
 
             #compute the predictions
-            # so the last four dimensions are
-            # [... x num_freq_out x num_capsule x num_capsule_in x capsule_dim_out]
-            predictions = tf.matmul(kernel_tiled, inputs_tiled)
-            predictions = tf.reduce_sum(predictions, -3)
 
-            #transpose so the last four dimensions are
-            # [... x num_freq_out x num_capsule_in x num_capsule x capsule_dim_out]
-            predictions = tf.transpose(range(shared) + [shared] +
-                                       [shared+2] + [shared+1] +
-                                       [shared+3])
+            #perform matrix multiplications so the last four dimensions are
+            # [... x num_freq_out x num_capsule_in x num_capsule_out  x kernel_size x capsule_dim_out]
+            predictions = tf.squeeze(tf.matmul(kernel_tiled, inputs_tiled), -1)
 
+            #sum over the kernel_size dimension
+            predictions = tf.reduce_sum(predictions, -2)
+
+            # tile the logits for each shared dimesion (batch, time)
             logits = self.logits
             for i in range(shared):
                 if predictions.shape[shared-i-1].value is None:
