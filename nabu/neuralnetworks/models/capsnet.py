@@ -9,7 +9,7 @@ import pdb
 class CapsNet(model.Model):
     '''A capsule network'''
 
-    def  _get_outputs(self, inputs, input_seq_length, is_training):
+    def _get_outputs(self, inputs, input_seq_length, is_training):
         '''
         Create the variables and do the forward computation
 

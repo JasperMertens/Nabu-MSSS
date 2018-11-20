@@ -87,8 +87,9 @@ class VoteTranformInitializer(tf.keras.initializers.Initializer):
         if partition_info is not None:
             scale_shape = partition_info.full_shape
 
-        if len(scale_shape) != 4:
-            raise ValueError('expected shape to be of length 4', scale_shape)
+		# TODO: Check if Conv caps needs a different initializer
+        # if len(scale_shape) != 4:
+        #     raise ValueError('expected shape to be of length 4', scale_shape)
 
         fan_in = scale_shape[1]
         fan_out = scale_shape[3]

@@ -24,3 +24,6 @@ nabu/computing/condor/non_distributed_cpu_train.job
 *jeroen*
 # ignore pycharm configurations
 .idea/
+venv/
+# ignore the models train and test data
+~/

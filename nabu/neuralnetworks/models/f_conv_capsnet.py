@@ -6,7 +6,7 @@ import model
 from nabu.neuralnetworks.components import layer, ops
 
 
-class F_ConvCapsNet(model.Model):
+class FConvCapsNet(model.Model):
     '''A convolutional capsule network'''
 
     def _get_outputs(self, inputs, input_seq_length, is_training):
@@ -28,7 +28,7 @@ class F_ConvCapsNet(model.Model):
         num_capsules = int(self.conf['num_capsules'])
         capsule_dim = int(self.conf['capsule_dim'])
         routing_iters = int(self.conf['routing_iters'])
-        # TODO
+        # TODO: Make kernel sizes a list of sizes for every layer, similarly for strides
         kernel_size = int(self.conf['conv_kernel_size'])
         stride = int(self.conf['stride'])
 
@@ -73,7 +73,7 @@ class F_ConvCapsNet(model.Model):
             for l in range(1, int(self.conf['num_layers'])):
                 with tf.variable_scope('layer%d' % l):
                     # a capsule layer
-                    f_conv_caps_layer = layer.FConvCapsule(num_freq=num_capsules,
+                    f_conv_caps_layer = layer.FConvCapsule(num_capsules=num_capsules,
                                                capsule_dim=capsule_dim,
                                                kernel_size=kernel_size,
                                                 stride=stride,
