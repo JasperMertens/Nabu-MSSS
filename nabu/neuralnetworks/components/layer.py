@@ -348,7 +348,7 @@ class FConvCapsule(tf.layers.Layer):
         '''
 
         #compute the predictions
-        predictions, logits = self.matmul_predict(inputs)
+        predictions, logits = self.conv2d_matmul_predict(inputs)
 
         #cluster the predictions
         outputs = self.cluster(predictions, logits)
@@ -515,10 +515,12 @@ class FConvCapsule(tf.layers.Layer):
             inputs = tf.manip.roll(inputs, -half_kernel, shared)
 
             #because the convolution is unpadded, values at the edges are dropped
-            inputs_split = tf.slice(inputs, [0]*shared +
-                              [half_kernel, 0] +
-                              [0]*(rank-shared-2),
+            inputs = tf.slice(inputs, [0]*shared +
+                              [half_kernel, 0, 0, 0],
                               shape)
+            #transpose so the dimensions are
+            # [... x num_freq_out, num_capsule_in x kernel_size x capsule_dim_in]
+            inputs_split = tf.transpose(inputs, range(shared+1) + [shared+2, shared+1, shared+3])
 
            #tile the inputs over the num_capsules output dimension
             # so the last five dimensions are
@@ -600,23 +602,23 @@ class FConvCapsule(tf.layers.Layer):
             #create a filter that selects the values of the frequencies
             # within the convolution kernel
             tile_filter = np.zeros(shape=[1, self.kernel_size,
-                                          n_in*d_in, self.kernel_size])
+                                          n_in*d_in, self.kernel_size], dtype=self.dtype)
             for i in range(self.kernel_size):
-                tile_filter[1, i, :, i] = 1
+                tile_filter[0, i, :, i] = 1
             tile_filter_op = tf.constant(tile_filter)
 
             inputs = tf.nn.depthwise_conv2d(inputs, tile_filter_op,
                                             strides=[1, 1, self.stride, 1],
                                             padding='VALID')
-            inputs = tf.squeeze(inputs, shared)
-            output_shape = tf.shape(inputs)
+            inputs = tf.squeeze(inputs, shared-1)
+            # output_shape = tf.shape(inputs)
             # output_shape[1] should equal num_freq_out if no padding
             # reshape back to [B, T, F_out, N_in, D_in, W_f]
-            inputs = tf.reshape(inputs, shape=[batch_size, -1, output_shape[1],
+            inputs = tf.reshape(inputs, shape=[batch_size, -1, num_freq_out,
                                                n_in, d_in, self.kernel_size])
             #transpose back so the last four dimensions are
             #  [... x num_freq_out x num_capsule_in x kernel_size x capsule_dim_in]
-            inputs_split = tf.transpose(inputs, range(shared+2) + [shared+4, shared+3])
+            inputs_split = tf.transpose(inputs, range(shared+2) + [shared+3, shared+2])
 
             #tile the inputs over the num_capsules output dimension
             # so the last five dimensions are
