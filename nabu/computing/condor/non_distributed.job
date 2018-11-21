@@ -47,7 +47,7 @@ Requirements = (CUDACapability >= 3.0)\
 #  && (machine != "virgo.esat.kuleuven.be")\
 
 #Specfy nice user behavior
-NiceUser = true
+NiceUser = false
 #Send an email in case of an error
 Notification = Error
 

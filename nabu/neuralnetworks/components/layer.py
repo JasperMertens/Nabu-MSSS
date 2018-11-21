@@ -348,7 +348,7 @@ class FConvCapsule(tf.layers.Layer):
         '''
 
         #compute the predictions
-        predictions, logits = self.conv2d_matmul_predict(inputs)
+        predictions, logits = self.matmul_predict(inputs)
 
         #cluster the predictions
         outputs = self.cluster(predictions, logits)
