@@ -4,7 +4,7 @@ contains the Convolutional CapsNet class'''
 import tensorflow as tf
 import model
 from nabu.neuralnetworks.components import layer, ops
-
+import pdb
 
 class FConvCapsNet(model.Model):
     '''A convolutional capsule network'''
@@ -49,11 +49,18 @@ class FConvCapsNet(model.Model):
                 output = tf.identity(inputs, 'inputs')
                 input_seq_length = tf.identity(input_seq_length, 'input_seq_length')
 
-                output_dim = num_capsules * capsule_dim
-                primary_capsules = tf.layers.conv1d(
+                # Include frequency dimension
+                output_dim = output.shape[2].value * num_capsules * capsule_dim
+                # TODO: use convolutional layer
+                # primary_capsules = tf.layers.conv1d(
+                #     output,
+                #     output_dim,
+                #     kernel_size
+                # )
+                primary_capsules = tf.layers.dense(
                     output,
                     output_dim,
-                    kernel_size
+                    use_bias=False
                 )
 
                 # Include frequency dimension
