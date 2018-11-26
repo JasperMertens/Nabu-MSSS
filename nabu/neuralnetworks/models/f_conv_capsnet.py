@@ -16,6 +16,7 @@ class FConvCapsNet(model.Model):
         Args:
             inputs: the inputs to the neural network, this is a list of
                 [batch_size x time x ...] tensors
+                Currently, the expected input is [batch_size x time x frequency]
             input_seq_length: The sequence lengths of the input utterances, this
                 is a [batch_size] vector
             is_training: whether or not the network is in training mode
@@ -50,25 +51,29 @@ class FConvCapsNet(model.Model):
                 input_seq_length = tf.identity(input_seq_length, 'input_seq_length')
 
                 # Include frequency dimension
-                output_dim = output.shape[2].value * num_capsules * capsule_dim
+                batch_size = output.shape[0].value
+                num_freq = output.shape[2].value
+                output_dim = num_capsules * capsule_dim
+                output = tf.reshape(output, shape=[-1, num_freq, 1])
                 # TODO: use convolutional layer
-                # primary_capsules = tf.layers.conv1d(
-                #     output,
-                #     output_dim,
-                #     kernel_size
-                # )
-                primary_capsules = tf.layers.dense(
+                primary_capsules = tf.layers.conv1d(
                     output,
                     output_dim,
-                    use_bias=False
+                    kernel_size,
+                    padding='SAME'
                 )
+                # primary_capsules = tf.layers.dense(
+                #     output,
+                #     output_dim,
+                #     use_bias=False
+                # )
 
                 # Include frequency dimension
                 primary_capsules = tf.reshape(
                     primary_capsules,
-                    [output.shape[0].value,
-                     tf.shape(output)[1],
-                     output.shape[2].value,
+                    [batch_size,
+                     -1,
+                     num_freq,
                      num_capsules,
                      capsule_dim]
                 )

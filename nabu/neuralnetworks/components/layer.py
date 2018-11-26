@@ -348,52 +348,12 @@ class FConvCapsule(tf.layers.Layer):
         '''
 
         #compute the predictions
-        predictions, logits = self.matmul_predict(inputs)
+        predictions, logits = self.conv2d_matmul_predict(inputs)
 
         #cluster the predictions
         outputs = self.cluster(predictions, logits)
 
         return outputs
-
-    def predict(self, inputs):
-        '''
-        compute the predictions for the output capsules and initialize the
-        routing logits
-        args:
-            inputs: the inputs to the layer. the final two dimensions are
-                num_capsules_in and capsule_dim_in
-        returns: the output capsule predictions
-        '''
-
-        with tf.name_scope('predict'):
-
-            #number of shared dimensions
-            rank = len(inputs.shape)
-            shared = rank-2
-
-            #put the input capsules as the first dimension
-            inputs = tf.transpose(inputs, [shared] + range(shared) + [rank-1])
-
-            #compute the predictions
-            predictions = tf.map_fn(
-                fn=lambda x: tf.tensordot(x[0], x[1], [[shared], [0]]),
-                elems=(inputs, self.kernel),
-                dtype=self.dtype or tf.float32)
-
-            #transpose back
-            predictions = tf.transpose(
-                predictions, range(1, shared+1)+[0]+[rank-1, rank])
-
-            logits = self.logits
-            for i in range(shared):
-                if predictions.shape[shared-i-1].value is None:
-                    shape = tf.shape(predictions)[shared-i-1]
-                else:
-                    shape = predictions.shape[shared-i-1].value
-                tile = [shape] + [1]*len(logits.shape)
-                logits = tf.tile(tf.expand_dims(logits, 0), tile)
-
-        return predictions, logits
 
     def matmul_predict(self, inputs):
         '''
@@ -583,7 +543,9 @@ class FConvCapsule(tf.layers.Layer):
 
             batch_size = inputs.shape[0].value
             num_freq_in = inputs.shape[-3].value
-            num_freq_out = (num_freq_in-self.kernel_size+1)/self.stride
+            num_freq_out = num_freq_in
+            #without padding:
+            #num_freq_out = (num_freq_in-self.kernel_size+1)/self.stride
             n_in = inputs.shape[-2].value
             d_in = inputs.shape[-1].value
 
@@ -607,9 +569,10 @@ class FConvCapsule(tf.layers.Layer):
                 tile_filter[0, i, :, i] = 1
             tile_filter_op = tf.constant(tile_filter)
 
+            #Convolution with padding
             inputs = tf.nn.depthwise_conv2d(inputs, tile_filter_op,
                                             strides=[1, 1, self.stride, 1],
-                                            padding='VALID')
+                                            padding='SAME')
             inputs = tf.squeeze(inputs, shared-1)
             # output_shape = tf.shape(inputs)
             # output_shape[1] should equal num_freq_out if no padding
