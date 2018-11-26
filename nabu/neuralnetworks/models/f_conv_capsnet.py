@@ -55,18 +55,13 @@ class FConvCapsNet(model.Model):
                 num_freq = output.shape[2].value
                 output_dim = num_capsules * capsule_dim
                 output = tf.reshape(output, shape=[-1, num_freq, 1])
-                # TODO: use convolutional layer
+
                 primary_capsules = tf.layers.conv1d(
                     output,
                     output_dim,
                     kernel_size,
                     padding='SAME'
                 )
-                # primary_capsules = tf.layers.dense(
-                #     output,
-                #     output_dim,
-                #     use_bias=False
-                # )
 
                 # Include frequency dimension
                 primary_capsules = tf.reshape(

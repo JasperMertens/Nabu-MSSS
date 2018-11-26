@@ -310,7 +310,9 @@ class FConvCapsule(tf.layers.Layer):
         num_freq_in = input_shape[-3].value
         num_capsules_in = input_shape[-2].value
         capsule_dim_in = input_shape[-1].value
-        num_freq_out = (num_freq_in-self.kernel_size+1)/self.stride
+        num_freq_out = num_freq_in
+        #without padding:
+        #num_freq_out = (num_freq_in-self.kernel_size+1)/self.stride
 
         if num_capsules_in is None:
             raise ValueError('number of input capsules must be defined')
@@ -368,7 +370,9 @@ class FConvCapsule(tf.layers.Layer):
         with tf.name_scope('matmul_predict'):
 
             num_freq_in = inputs.shape[-3].value
-            num_freq_out = (num_freq_in-self.kernel_size+1)/self.stride
+            num_freq_out = num_freq_in
+            # withoout padding:
+            #num_freq_out = (num_freq_in-self.kernel_size+1)/self.stride
 
             #number of shared dimensions
             rank = len(inputs.shape)
@@ -376,6 +380,13 @@ class FConvCapsule(tf.layers.Layer):
 
             #put the frequencies as the first dimension
             inputs = tf.transpose(inputs, [shared] + range(shared) + [rank-2, rank-1])
+
+            #pad the inputs with zeros
+            half_kernel = self.kernel_size // 2
+            zeros = tf.zeros(shape=tf.shape(inputs)[1:])
+            zeros = tf.expand_dims(zeros, 0)
+            for i in range(half_kernel):
+                inputs = tf.concat([zeros, inputs, zeros], 0)
 
             #create the indices list
             indices = []
@@ -386,6 +397,7 @@ class FConvCapsule(tf.layers.Layer):
 
             #split the inputs up for every frequency convolution
             #so the first two dimensions are [num_freq_out x kernel_size x ...]
+            #TODO: solve the problem that it thorws a sparse to dense gradients warning
             inputs_split = tf.gather(inputs, indices)
 
             #transpose back so the last four dimensions are
