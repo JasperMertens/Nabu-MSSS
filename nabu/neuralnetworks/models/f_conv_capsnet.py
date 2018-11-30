@@ -96,8 +96,7 @@ class FConvCapsNet(model.Model):
                 output,
                 [output.shape[0].value,
                  tf.shape(output)[1],
-                 output.shape[2].value,
-                 output_dim]
+                 output.shape[2].value*output_dim]
             )
 
         return output

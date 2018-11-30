@@ -350,7 +350,7 @@ class FConvCapsule(tf.layers.Layer):
         '''
 
         #compute the predictions
-        predictions, logits = self.conv2d_matmul_predict(inputs)
+        predictions, logits = self.matmul_predict(inputs)
 
         #cluster the predictions
         outputs = self.cluster(predictions, logits)
@@ -371,7 +371,7 @@ class FConvCapsule(tf.layers.Layer):
 
             num_freq_in = inputs.shape[-3].value
             num_freq_out = num_freq_in
-            # withoout padding:
+            # without padding:
             #num_freq_out = (num_freq_in-self.kernel_size+1)/self.stride
 
             #number of shared dimensions
@@ -382,11 +382,12 @@ class FConvCapsule(tf.layers.Layer):
             inputs = tf.transpose(inputs, [shared] + range(shared) + [rank-2, rank-1])
 
             #pad the inputs with zeros
-            half_kernel = self.kernel_size // 2
-            zeros = tf.zeros(shape=tf.shape(inputs)[1:])
-            zeros = tf.expand_dims(zeros, 0)
-            for i in range(half_kernel):
-                inputs = tf.concat([zeros, inputs, zeros], 0)
+            with tf.name_scope('zero_padding'):
+                half_kernel = self.kernel_size // 2
+                zeros = tf.zeros(shape=tf.shape(inputs)[1:])
+                zeros = tf.expand_dims(zeros, 0)
+                for i in range(half_kernel):
+                    inputs = tf.concat([zeros, inputs, zeros], 0)
 
             #create the indices list
             indices = []
@@ -420,14 +421,15 @@ class FConvCapsule(tf.layers.Layer):
             kernel = tf.transpose(self.kernel, [1, 3, 0, 4, 2])
 
             #tile the kernel for every shared dimension (batch, time) and num_freq_out
-            kernel_tiled = kernel
-            for i in range(shared+1):
-                if inputs_tiled.shape[shared-i].value is None:
-                    shape = tf.shape(inputs_tiled)[shared-i]
-                else:
-                    shape = inputs_tiled.shape[shared-i].value
-                tile = [shape] + [1]*len(kernel_tiled.shape)
-                kernel_tiled = tf.tile(tf.expand_dims(kernel_tiled, 0), tile)
+            with tf.name_scope('tile_kernel'):
+                kernel_tiled = kernel
+                for i in range(shared+1):
+                    if inputs_tiled.shape[shared-i].value is None:
+                        shape = tf.shape(inputs_tiled)[shared-i]
+                    else:
+                        shape = inputs_tiled.shape[shared-i].value
+                    tile = [shape] + [1]*len(kernel_tiled.shape)
+                    kernel_tiled = tf.tile(tf.expand_dims(kernel_tiled, 0), tile)
 
             #compute the predictions
 
@@ -439,14 +441,15 @@ class FConvCapsule(tf.layers.Layer):
             predictions = tf.reduce_sum(predictions, -2)
 
             # tile the logits for each shared dimesion (batch, time)
-            logits = self.logits
-            for i in range(shared):
-                if predictions.shape[shared-i-1].value is None:
-                    shape = tf.shape(predictions)[shared-i-1]
-                else:
-                    shape = predictions.shape[shared-i-1].value
-                tile = [shape] + [1]*len(logits.shape)
-                logits = tf.tile(tf.expand_dims(logits, 0), tile)
+            with tf.name_scope('tile_logits'):
+                logits = self.logits
+                for i in range(shared):
+                    if predictions.shape[shared-i-1].value is None:
+                        shape = tf.shape(predictions)[shared-i-1]
+                    else:
+                        shape = predictions.shape[shared-i-1].value
+                    tile = [shape] + [1]*len(logits.shape)
+                    logits = tf.tile(tf.expand_dims(logits, 0), tile)
 
         return predictions, logits
 
@@ -573,27 +576,28 @@ class FConvCapsule(tf.layers.Layer):
             inputs = tf.reshape(inputs, shape=[shared_size, 1,
                                             num_freq_in, n_in*d_in])
 
-            #create a filter that selects the values of the frequencies
-            # within the convolution kernel
-            tile_filter = np.zeros(shape=[1, self.kernel_size,
-                                          n_in*d_in, self.kernel_size], dtype=self.dtype)
-            for i in range(self.kernel_size):
-                tile_filter[0, i, :, i] = 1
-            tile_filter_op = tf.constant(tile_filter)
+            with tf.name_scope('group_freqs'):
+                #create a filter that selects the values of the frequencies
+                # within the convolution kernel
+                tile_filter = np.zeros(shape=[1, self.kernel_size,
+                                              n_in*d_in, self.kernel_size], dtype=self.dtype)
+                for i in range(self.kernel_size):
+                    tile_filter[0, i, :, i] = 1
+                tile_filter_op = tf.constant(tile_filter)
 
-            #Convolution with padding
-            inputs = tf.nn.depthwise_conv2d(inputs, tile_filter_op,
-                                            strides=[1, 1, self.stride, 1],
-                                            padding='SAME')
-            inputs = tf.squeeze(inputs, shared-1)
-            # output_shape = tf.shape(inputs)
-            # output_shape[1] should equal num_freq_out if no padding
-            # reshape back to [B, T, F_out, N_in, D_in, W_f]
-            inputs = tf.reshape(inputs, shape=[batch_size, -1, num_freq_out,
-                                               n_in, d_in, self.kernel_size])
-            #transpose back so the last four dimensions are
-            #  [... x num_freq_out x num_capsule_in x kernel_size x capsule_dim_in]
-            inputs_split = tf.transpose(inputs, range(shared+2) + [shared+3, shared+2])
+                #Convolution with padding
+                inputs = tf.nn.depthwise_conv2d(inputs, tile_filter_op,
+                                                strides=[1, 1, self.stride, 1],
+                                                padding='SAME')
+                inputs = tf.squeeze(inputs, shared-1)
+                # output_shape = tf.shape(inputs)
+                # output_shape[1] should equal num_freq_out if no padding
+                # reshape back to [B, T, F_out, N_in, D_in, W_f]
+                inputs = tf.reshape(inputs, shape=[batch_size, -1, num_freq_out,
+                                                   n_in, d_in, self.kernel_size])
+                #transpose back so the last four dimensions are
+                #  [... x num_freq_out x num_capsule_in x kernel_size x capsule_dim_in]
+                inputs_split = tf.transpose(inputs, range(shared+2) + [shared+3, shared+2])
 
             #tile the inputs over the num_capsules output dimension
             # so the last five dimensions are
@@ -610,33 +614,35 @@ class FConvCapsule(tf.layers.Layer):
             kernel = tf.transpose(self.kernel, [1, 3, 0, 4, 2])
 
             #tile the kernel for every shared dimension (batch, time) and num_freq_out
-            kernel_tiled = kernel
-            for i in range(shared+1):
-                if inputs_tiled.shape[shared-i].value is None:
-                    shape = tf.shape(inputs_tiled)[shared-i]
-                else:
-                    shape = inputs_tiled.shape[shared-i].value
-                tile = [shape] + [1]*len(kernel_tiled.shape)
-                kernel_tiled = tf.tile(tf.expand_dims(kernel_tiled, 0), tile)
+            with tf.name_scope('tile_kernel'):
+                kernel_tiled = kernel
+                for i in range(shared+1):
+                    if inputs_tiled.shape[shared-i].value is None:
+                        shape = tf.shape(inputs_tiled)[shared-i]
+                    else:
+                        shape = inputs_tiled.shape[shared-i].value
+                    tile = [shape] + [1]*len(kernel_tiled.shape)
+                    kernel_tiled = tf.tile(tf.expand_dims(kernel_tiled, 0), tile)
 
             #compute the predictions
+            with tf.name_scope('compute_predictions'):
+                #perform matrix multiplications so the last four dimensions are
+                # [... x num_freq_out x num_capsule_in x num_capsule_out  x kernel_size x capsule_dim_out]
+                predictions = tf.squeeze(tf.matmul(kernel_tiled, inputs_tiled), -1)
 
-            #perform matrix multiplications so the last four dimensions are
-            # [... x num_freq_out x num_capsule_in x num_capsule_out  x kernel_size x capsule_dim_out]
-            predictions = tf.squeeze(tf.matmul(kernel_tiled, inputs_tiled), -1)
-
-            #sum over the kernel_size dimension
-            predictions = tf.reduce_sum(predictions, -2)
+                #sum over the kernel_size dimension
+                predictions = tf.reduce_sum(predictions, -2)
 
             # tile the logits for each shared dimesion (batch, time)
-            logits = self.logits
-            for i in range(shared):
-                if predictions.shape[shared-i-1].value is None:
-                    shape = tf.shape(predictions)[shared-i-1]
-                else:
-                    shape = predictions.shape[shared-i-1].value
-                tile = [shape] + [1]*len(logits.shape)
-                logits = tf.tile(tf.expand_dims(logits, 0), tile)
+            with tf.name_scope('tile_logits'):
+                logits = self.logits
+                for i in range(shared):
+                    if predictions.shape[shared-i-1].value is None:
+                        shape = tf.shape(predictions)[shared-i-1]
+                    else:
+                        shape = predictions.shape[shared-i-1].value
+                    tile = [shape] + [1]*len(logits.shape)
+                    logits = tf.tile(tf.expand_dims(logits, 0), tile)
 
         return predictions, logits
 
@@ -705,7 +711,9 @@ class FConvCapsule(tf.layers.Layer):
                 % input_shape)
 
         num_freq_in = input_shape[-3].value
-        num_freq_out = (num_freq_in-self.kernel_size+1)/self.stride
+        num_freq_out = num_freq_in
+        #if no padding:
+        #num_freq_out = (num_freq_in-self.kernel_size+1)/self.stride
 
         return input_shape[:-3].concatenate(
             [num_freq_out, self.num_capsules, self.capsule_dim])

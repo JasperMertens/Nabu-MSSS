@@ -688,7 +688,6 @@ def deepclustering_loss(targets, logits, usedbins, seq_length, batch_size):
     Returns:
         a scalar value containing the loss
     '''
-    
     with tf.name_scope('deepclustering_loss'):
 	feat_dim = usedbins.get_shape()[2]
         output_dim = logits.get_shape()[2]
