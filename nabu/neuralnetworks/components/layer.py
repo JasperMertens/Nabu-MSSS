@@ -350,12 +350,56 @@ class FConvCapsule(tf.layers.Layer):
         '''
 
         #compute the predictions
-        predictions, logits = self.matmul_predict(inputs)
+        predictions, logits = self.predict(inputs)
 
         #cluster the predictions
         outputs = self.cluster(predictions, logits)
 
         return outputs
+
+    def predict(self, inputs):
+        '''
+        compute the predictions for the output capsules and initialize the
+        routing logits
+        args:
+            inputs: the inputs to the layer. the final two dimensions are
+                num_capsules_in and capsule_dim_in
+        returns: the output capsule predictions
+        '''
+
+        with tf.name_scope('predict'):
+
+            batch_size = inputs.shape[0].value
+            num_freq_in = inputs.shape[-3].value
+            num_freq_out = num_freq_in
+            num_capsule_in = inputs.shape[-2].value
+            capsule_dim_in = inputs.shape[-1].value
+            num_filters = num_capsule_in*self.num_capsules*self.capsule_dim
+
+            #number of shared dimensions
+            rank = len(inputs.shape)
+            shared = rank-3
+
+            #reshape to [B*T, F, N_in*D_in]
+            inputs = tf.reshape(inputs, shape=[-1, num_freq_in, num_capsule_in*capsule_dim_in])
+
+            predictions = tf.layers.conv1d(inputs, num_filters,
+                                    self.kernel_size, self.stride,
+                                    padding='SAME', use_bias=False)
+            predictions = tf.reshape(predictions, shape=[batch_size, -1, num_freq_out, num_capsule_in, self.num_capsules, self.capsule_dim])
+
+            # tile the logits for each shared dimesion (batch, time)
+            with tf.name_scope('tile_logits'):
+                logits = self.logits
+                for i in range(shared):
+                    if predictions.shape[shared-i-1].value is None:
+                        shape = tf.shape(predictions)[shared-i-1]
+                    else:
+                        shape = predictions.shape[shared-i-1].value
+                    tile = [shape] + [1]*len(logits.shape)
+                    logits = tf.tile(tf.expand_dims(logits, 0), tile)
+
+        return predictions, logits
 
     def matmul_predict(self, inputs):
         '''
@@ -433,7 +477,7 @@ class FConvCapsule(tf.layers.Layer):
 
             #compute the predictions
 
-            #perform matrix multiplications so the last four dimensions are
+            #perform matrix multiplications so the last five dimensions are
             # [... x num_freq_out x num_capsule_in x num_capsule_out  x kernel_size x capsule_dim_out]
             predictions = tf.squeeze(tf.matmul(kernel_tiled, inputs_tiled), -1)
 
