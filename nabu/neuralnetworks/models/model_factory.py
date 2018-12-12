@@ -3,7 +3,7 @@ contains the model factory'''
 
 from . import dblstm, plain_variables, linear, concat, leaky_dblstm,\
   multi_averager, feedforward, leaky_dblstm_iznotrec, leaky_dblstm_notrec, dbrnn,\
-  capsnet, dbr_capsnet, f_conv_capsnet, dbgru, leaky_dbgru, dbresetlstm, dlstm, dresetlstm,\
+  capsnet, dbr_capsnet, f_conv_capsnet, f_cnn, dbgru, leaky_dbgru, dbresetlstm, dlstm, dresetlstm,\
   leaky_dlstm, encoder_decoder_cnn
 
 def factory(architecture):
@@ -41,6 +41,8 @@ def factory(architecture):
         return dbr_capsnet.DBRCapsNet
     elif architecture == 'f_conv_capsnet':
         return f_conv_capsnet.FConvCapsNet
+    elif architecture == 'f_cnn':
+        return f_cnn.FCNN
     elif architecture == 'dbgru':
         return dbgru.DBGRU
     elif architecture == 'leaky_dbgru':

@@ -60,8 +60,8 @@ class FConvCapsNet(model.Model):
                     output,
                     output_dim,
                     kernel_size,
-                    padding='SAME',
-                    activation=tf.nn.relu
+                    stride,
+                    padding='SAME'
                 )
 
                 # Include frequency dimension

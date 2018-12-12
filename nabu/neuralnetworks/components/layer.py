@@ -350,7 +350,7 @@ class FConvCapsule(tf.layers.Layer):
         '''
 
         #compute the predictions
-        predictions, logits = self.predict(inputs)
+        predictions, logits = self.depthwise_predict(inputs)
 
         #cluster the predictions
         outputs = self.cluster(predictions, logits)
@@ -386,6 +386,66 @@ class FConvCapsule(tf.layers.Layer):
             predictions = tf.layers.conv1d(inputs, num_filters,
                                     self.kernel_size, self.stride,
                                     padding='SAME', use_bias=False)
+            predictions = tf.reshape(predictions, shape=[batch_size, -1, num_freq_out, num_capsule_in, self.num_capsules, self.capsule_dim])
+
+            # tile the logits for each shared dimesion (batch, time)
+            with tf.name_scope('tile_logits'):
+                logits = self.logits
+                for i in range(shared):
+                    if predictions.shape[shared-i-1].value is None:
+                        shape = tf.shape(predictions)[shared-i-1]
+                    else:
+                        shape = predictions.shape[shared-i-1].value
+                    tile = [shape] + [1]*len(logits.shape)
+                    logits = tf.tile(tf.expand_dims(logits, 0), tile)
+
+        return predictions, logits
+
+    def depthwise_predict(self, inputs):
+        '''
+        compute the predictions for the output capsules and initialize the
+        routing logits
+        args:
+            inputs: the inputs to the layer. the final two dimensions are
+                num_capsules_in and capsule_dim_in
+        returns: the output capsule predictions
+        '''
+
+        with tf.name_scope('depthwise_predict'):
+
+            batch_size = inputs.shape[0].value
+            num_freq_in = inputs.shape[-3].value
+            num_freq_out = num_freq_in
+            num_capsule_in = inputs.shape[-2].value
+            capsule_dim_in = inputs.shape[-1].value
+
+            #number of shared dimensions
+            rank = len(inputs.shape)
+            shared = rank-3
+
+            # pad the inputs with zeros along the freq dimension
+            with tf.name_scope('zero_padding'):
+                half_kernel = self.kernel_size // 2
+                paddings = [[0, 0]] * shared + [[half_kernel, half_kernel], [0, 0], [0, 0]]
+                inputs = tf.pad(inputs, paddings, "CONSTANT")
+
+            # reshape to [B*T, F, D_in, N_in]
+            inputs = tf.reshape(inputs, shape=[-1, num_freq_in+2*half_kernel,
+                                               capsule_dim_in, num_capsule_in])
+
+            # inputs = tf.reshape(inputs, shape=[-1, num_freq_in,
+            #                                    capsule_dim_in, num_capsule_in])
+
+            # reshape the kernel to [W, D_in, N_in, N_out*D_out]
+            kernel = tf.transpose(self.kernel, [0, 2, 1, 3, 4])
+            kernel = tf.reshape(kernel, shape=[self.kernel_size, capsule_dim_in, num_capsule_in,
+                                               self.num_capsules*self.capsule_dim])
+
+            # tensorflow does not pad along the D_in dimension with stride=D_in for that axis
+            # but no support for different strides yet, so need manual padding
+            predictions = tf.nn.depthwise_conv2d(inputs, kernel,
+                                    strides=[1, self.stride, self.stride, 1],
+                                    padding='VALID')
             predictions = tf.reshape(predictions, shape=[batch_size, -1, num_freq_out, num_capsule_in, self.num_capsules, self.capsule_dim])
 
             # tile the logits for each shared dimesion (batch, time)
