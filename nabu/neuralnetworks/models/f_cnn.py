@@ -81,8 +81,8 @@ class FCNN(model.Model):
             output = tf.reshape(
             output,
             [batch_size,
-            -1,
-             num_freq*num_filters]
+            -1, num_freq,
+             num_filters]
             )
 
             return output

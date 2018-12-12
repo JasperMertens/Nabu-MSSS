@@ -95,9 +95,9 @@ class FConvCapsNet(model.Model):
             # Include frequency dimension
             output = tf.reshape(
                 output,
-                [output.shape[0].value,
+                [batch_size,
                  tf.shape(output)[1],
-                 output.shape[2].value*output_dim]
+                 num_freq, output_dim]
             )
 
         return output
