@@ -900,10 +900,10 @@ class Conv2DCapsule(tf.layers.Layer):
             initializer=self.kernel_initializer)
 
         self.tf_kernel = self.add_variable(
-            name='kernel',
+            name='tf_kernel',
             dtype=self.dtype,
             shape=[self.kernel_size, self.kernel_size,
-                num_capsules_in, self.num_capsules],
+                num_capsules_in*self.num_capsules, 1],
             initializer=self.kernel_initializer)
 
         self.logits = self.add_variable(
@@ -958,26 +958,30 @@ class Conv2DCapsule(tf.layers.Layer):
             rank = len(inputs.shape)
             shared = rank-2
 
-            if shared > 26 - 4:
-                raise 'Not enough letters in the alphabet to use Einstein notation'
-            # input_shape = [shared (typicaly batch_size,time,freq),Nin,Din], kernel_shape = [Nin, Din, Nout, Dout],
-            # predictions_shape = [shared,Nin,Nout,Dout]
-            shared_shape_str = _alphabet_str[0:shared]
-            input_shape_str = shared_shape_str + 'wx'
-            kernel_shape_str = 'wxyz'
-            output_shape_str = shared_shape_str + 'wyz'
-            ein_not = '%s,%s->%s' % (input_shape_str, kernel_shape_str, output_shape_str)
-
-            predictions = tf.einsum(ein_not, inputs, self.kernel)
-
-            # # put the input capsules as the first dimension
-            # inputs = tf.transpose(inputs, [shared] + range(shared) + [rank - 1])
+            # if shared > 26 - 4:
+            #     raise 'Not enough letters in the alphabet to use Einstein notation'
+            # # input_shape = [shared (typicaly batch_size,time,freq),Nin,Din], kernel_shape = [Nin, Din, Nout, Dout],
+            # # predictions_shape = [shared,Nin,Nout,Dout]
+            # shared_shape_str = _alphabet_str[0:shared]
+            # input_shape_str = shared_shape_str + 'wx'
+            # kernel_shape_str = 'wxyz'
+            # output_shape_str = shared_shape_str + 'wyz'
+            # ein_not = '%s,%s->%s' % (input_shape_str, kernel_shape_str, output_shape_str)
             #
-            # # compute the predictions
-            # predictions = tf.map_fn(
-            #     fn=lambda x: tf.tensordot(x[0], x[1], [[shared], [0]]),
-            #     elems=(inputs, self.kernel),
-            #     dtype=self.dtype or tf.float32)
+            # predictions = tf.einsum(ein_not, inputs, self.kernel)
+
+            # put the input capsules as the first dimension
+            inputs = tf.transpose(inputs, [shared] + range(shared) + [rank - 1])
+
+            # compute the predictions
+            predictions = tf.map_fn(
+                fn=lambda x: tf.tensordot(x[0], x[1], [[shared], [0]]),
+                elems=(inputs, self.kernel),
+                dtype=self.dtype or tf.float32)
+
+            # transpose back
+            predictions = tf.transpose(
+                predictions, range(1, shared + 1) + [0] + [rank - 1, rank])
 
             # reshape to [B*D_out, T, F, N_in*N_out]
             #predictions = tf.transpose(predictions, range(shared-1) + [shared+1, shared+2, shared-1, shared])
@@ -993,13 +997,16 @@ class Conv2DCapsule(tf.layers.Layer):
             #                                strides=self.stride,
             #                                padding="SAME",
             #                                use_bias=False)
-            predictions = tf.nn.depthwise_conv2d(inputs, self.tf_kernel,
+            predictions = tf.nn.depthwise_conv2d(predictions, self.tf_kernel,
                                                  strides=[1, self.stride, self.stride, 1],
                                                  padding='SAME')
 
             # reshape back to [B, T, F, N_in, N_out, D_out]
-            predictions = tf.reshape(predictions, [batch_size, num_capsule_in, self.num_capsules, self.capsule_dim, -1, num_freq_out])
-            predictions = tf.transpose(predictions, range(shared-2)+[rank-1, rank, shared-2, shared-1, shared])
+            # predictions = tf.reshape(predictions, [batch_size, num_capsule_in, self.num_capsules, self.capsule_dim, -1, num_freq_out])
+            # predictions = tf.transpose(predictions, range(shared-2)+[rank-1, rank, shared-2, shared-1, shared])
+            predictions = tf.reshape(predictions, [batch_size, self.capsule_dim, -1,
+                                                   num_freq_out, num_capsule_in, self.num_capsules])
+            predictions = tf.transpose(predictions, range(shared-2)+[shared-1,rank-2,rank-1,rank,shared-2])
 
             # tile the logits for each shared dimesion (batch, time, frequency)
             with tf.name_scope('tile_logits'):
