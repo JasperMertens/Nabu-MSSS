@@ -3,8 +3,8 @@ contains the model factory'''
 
 from . import dblstm, plain_variables, linear, concat, leaky_dblstm,\
   multi_averager, feedforward, leaky_dblstm_iznotrec, leaky_dblstm_notrec, dbrnn,\
-  capsnet, dbr_capsnet, f_conv_capsnet, f_cnn, dbgru, leaky_dbgru, dbresetlstm, dlstm, dresetlstm,\
-  leaky_dlstm, encoder_decoder_cnn
+  capsnet, dbr_capsnet, dbgru, leaky_dbgru, dbresetlstm, dlstm, dresetlstm,\
+  leaky_dlstm, encoder_decoder_cnn, f_conv_capsnet, f_cnn, cnn_2d, conv2d_capsnet
 
 def factory(architecture):
     '''get a model class
@@ -43,6 +43,8 @@ def factory(architecture):
         return f_conv_capsnet.FConvCapsNet
     elif architecture == 'f_cnn':
         return f_cnn.FCNN
+    elif architecture == 'cnn_2d':
+        return cnn_2d.CNN2D
     elif architecture == 'dbgru':
         return dbgru.DBGRU
     elif architecture == 'leaky_dbgru':
@@ -57,5 +59,7 @@ def factory(architecture):
         return leaky_dlstm.LeakyDLSTM
     elif architecture == 'encoder_decoder_cnn':
         return encoder_decoder_cnn.EncoderDecoderCNN
+    elif architecture == 'conv2d_capsnet':
+        return conv2d_capsnet.Conv2DCapsNet
     else:
         raise Exception('undefined architecture type: %s' % architecture)

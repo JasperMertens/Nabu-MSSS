@@ -117,14 +117,13 @@ class EncoderDecoderCNN(model.Model):
 		encoder_outputs=[]
 		for l in range(num_encoder_layers):
 		    with tf.variable_scope('layer_%s'%l):
-		      
-			logits = encoder_layers[l](logits)
-			
-			encoder_outputs.append(logits)
+				logits = encoder_layers[l](logits)
 
-			if is_training and float(self.conf['dropout']) < 1:
-			    raise 'have to check wheter dropout is implemented correctly'
-			    logits = tf.nn.dropout(logits, float(self.conf['dropout']))
+				encoder_outputs.append(logits)
+
+				if is_training and float(self.conf['dropout']) < 1:
+					raise 'have to check wheter dropout is implemented correctly'
+					logits = tf.nn.dropout(logits, float(self.conf['dropout']))
 	      
 	    with tf.variable_scope('centre'):
 		for l in range(num_centre_layers):
