@@ -30,7 +30,7 @@ class Conv2DCapsNet(model.Model):
         capsule_dim = int(self.conf['capsule_dim'])
         routing_iters = int(self.conf['routing_iters'])
         # TODO: Make kernel sizes a list of sizes for every layer, similarly for strides
-        kernel_size = int(self.conf['conv_kernel_size'])
+        kernel_size = map(int, self.conf['filters'].split(' '))
         stride = int(self.conf['stride'])
 
         # code not available for multiple inputs!!
@@ -82,7 +82,7 @@ class Conv2DCapsNet(model.Model):
                     conv2d_caps_layer = layer.Conv2DCapsule(num_capsules=num_capsules,
                                                capsule_dim=capsule_dim,
                                                kernel_size=kernel_size,
-                                                stride=stride,
+                                                strides=(stride,stride),
                                                routing_iters=routing_iters)
 
                     output = conv2d_caps_layer(output)

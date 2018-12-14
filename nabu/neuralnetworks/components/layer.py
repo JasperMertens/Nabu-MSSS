@@ -828,7 +828,10 @@ class Conv2DCapsule(tf.layers.Layer):
 
     def __init__(
             self, num_capsules, capsule_dim,
-            kernel_size=3, stride=1,
+            kernel_size=[3,3], strides=(1,1),
+            padding='same',
+            max_pool_filter=(1, 1),
+            transpose=False,
             routing_iters=3,
             activation_fn=None,
             probability_fn=None,
@@ -864,7 +867,10 @@ class Conv2DCapsule(tf.layers.Layer):
         self.num_capsules = num_capsules
         self.capsule_dim = capsule_dim
         self.kernel_size = kernel_size
-        self.stride = stride
+        self.strides = strides
+        self.padding = padding
+        self.max_pool_filter = max_pool_filter
+        self.transpose = transpose
         self.kernel_initializer = kernel_initializer or capsule_initializer()
         self.logits_initializer = logits_initializer or tf.zeros_initializer()
         self.routing_iters = routing_iters
@@ -902,7 +908,7 @@ class Conv2DCapsule(tf.layers.Layer):
         self.tf_kernel = self.add_variable(
             name='tf_kernel',
             dtype=self.dtype,
-            shape=[self.kernel_size, self.kernel_size,
+            shape=[self.kernel_size[0], self.kernel_size[1],
                 num_capsules_in*self.num_capsules, 1],
             initializer=self.kernel_initializer)
 
@@ -990,22 +996,37 @@ class Conv2DCapsule(tf.layers.Layer):
                                     [batch_size*self.capsule_dim,
                                     -1, num_freq_in, num_capsule_in*self.num_capsules])
 
-            # convolution over time and frequency
-            # predictions = tf.layers.conv2d(predictions,
-            #                                filters=1,
-            #                                kernel_size=[1,self.kernel_size],
-            #                                strides=self.stride,
-            #                                padding="SAME",
-            #                                use_bias=False)
-            predictions = tf.nn.depthwise_conv2d(predictions, self.tf_kernel,
-                                                 strides=[1, self.stride, self.stride, 1],
-                                                 padding='SAME')
+            if not self.transpose :
+                # convolution over time and frequency
+                # predictions = tf.layers.conv2d(predictions,
+                #                                filters=1,
+                #                                kernel_size=[1,self.kernel_size],
+                #                                strides=self.stride,
+                #                                padding="SAME",
+                #                                use_bias=False)
+                predictions = tf.nn.depthwise_conv2d(predictions, self.tf_kernel,
+                                                     strides=[1, self.strides[0], self.strides[1], 1],
+                                                     padding=self.padding)
+            else :
+                predictions = tf.layers.conv2d_transpose(
+                    inputs=predictions,
+                    filters=self.num_capsules*num_capsule_in,
+                    kernel_size=self.kernel_size,
+                    strides=self.strides,
+                    padding=self.padding,
+                    use_bias=False)
+                # predictions = tf.nn.conv2d_transpose(predictions, self.tf_kernel,
+                #                                      strides=[1, self.strides[0], self.strides[1], 1],
+                #                                      output_shape=output_shape,
+                #                                      padding=self.padding)
+
+
 
             # reshape back to [B, T, F, N_in, N_out, D_out]
             # predictions = tf.reshape(predictions, [batch_size, num_capsule_in, self.num_capsules, self.capsule_dim, -1, num_freq_out])
             # predictions = tf.transpose(predictions, range(shared-2)+[rank-1, rank, shared-2, shared-1, shared])
             predictions = tf.reshape(predictions, [batch_size, self.capsule_dim, -1,
-                                                   num_freq_out, num_capsule_in, self.num_capsules])
+                                                   predictions.shape[2], num_capsule_in, self.num_capsules])
             predictions = tf.transpose(predictions, range(shared-2)+[shared-1,rank-2,rank-1,rank,shared-2])
 
             # tile the logits for each shared dimesion (batch, time, frequency)
