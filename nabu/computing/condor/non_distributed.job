@@ -29,6 +29,9 @@ Requirements = (CUDACapability >= 3.0)\
 #  && (machine != "molder.esat.kuleuven.be")\
 # machines below should be re-added \
 #  && (machine != "andromeda.esat.kuleuven.be") \
+# machines below produce error\\
+   && (machine != "askoy.esat.kuleuven.be")\
+   && (machine != "spchcl23.esat.kuleuven.be")\
 # machines below are removed since using 8 cpus is faster\\
   && (machine != "tiger.esat.kuleuven.be")\
   && (machine != "molder.esat.kuleuven.be")\
@@ -45,6 +48,7 @@ Requirements = (CUDACapability >= 3.0)\
 #  && (machine != "cancer.esat.kuleuven.be")\
 #  && (machine != "libra.esat.kuleuven.be")\
 #  && (machine != "virgo.esat.kuleuven.be")\
+
 
 #Specfy nice user behavior
 NiceUser = false
