@@ -13,7 +13,7 @@ Requirements = (CUDACapability >= 3.0)\
   &&(CUDAGlobalMemoryMb >= $(memory))\
   &&(machine =!= LastRemoteHost)\
   && (machine != "spchcl24.esat.kuleuven.be")\
-#  && (machine != "spchcl23.esat.kuleuven.be")\
+  && (machine != "spchcl23.esat.kuleuven.be")\
   && (machine != "cancer.esat.kuleuven.be")\
   && (machine != "libra.esat.kuleuven.be")\
   && (machine != "virgo.esat.kuleuven.be")\
@@ -41,8 +41,7 @@ Requirements = (CUDACapability >= 3.0)\
   && (machine != "tiger.esat.kuleuven.be")\
   && (machine != "molder.esat.kuleuven.be")\
   && (machine != "spchcl21.esat.kuleuven.be")
-  
-  
+ 
 #  && (machine != "andromeda.esat.kuleuven.be") \
 #  && (machine != "hematite.esat.kuleuven.be")\
 #  && (machine != "leo.esat.kuleuven.be")\
