@@ -7,6 +7,7 @@ import tensorflow as tf
 from tensorflow.python.ops.rnn import bidirectional_dynamic_rnn, dynamic_rnn
 from nabu.neuralnetworks.components import ops, rnn_cell, rnn
 from ops import capsule_initializer
+# import tensorflow.keras.constraints as constraint
 import numpy as np
 import pdb
 
@@ -828,8 +829,8 @@ class Conv2DCapsule(tf.layers.Layer):
 
     def __init__(
             self, num_capsules, capsule_dim,
-            kernel_size=[3,3], strides=(1,1),
-            padding='same',
+            kernel_size=(9,9), strides=(1,1),
+            padding='SAME',
             max_pool_filter=(1, 1),
             transpose=False,
             routing_iters=3,
@@ -911,6 +912,24 @@ class Conv2DCapsule(tf.layers.Layer):
             shape=[self.kernel_size[0], self.kernel_size[1],
                 num_capsules_in*self.num_capsules, 1],
             initializer=self.kernel_initializer)
+            # constraint=constraint.unit_norm([0,1]))
+
+        # self.full_kernel = self.add_variable(
+        #     name='full_kernel',
+        #     dtype=self.dtype,
+        #     shape=[self.kernel_size[0], self.kernel_size[1],
+        #            num_capsules_in * capsule_dim_in,
+        #            self.num_capsules * self.capsule_dim],
+        #     initializer=self.kernel_initializer)
+
+        #[num_capsules_in x num_capsules_out x kernel_size * kernel_size x capsule_dim_out x capsule_dim_in]
+        # self.matmul_kernel = self.add_variable(
+        #     name='matmul_kernel',
+        #     dtype=self.dtype,
+        #     shape=[num_capsules_in, self.num_capsules,
+        #            self.kernel_size[0]*self.kernel_size[1],
+        #            self.capsule_dim, capsule_dim_in],
+        #     initializer=self.kernel_initializer)
 
         self.logits = self.add_variable(
             name='init_logits',
@@ -961,8 +980,8 @@ class Conv2DCapsule(tf.layers.Layer):
             capsule_dim_in = inputs.shape[-1].value
 
             #number of shared dimensions
-            rank = len(inputs.shape)
-            shared = rank-2
+            rank = len(inputs.shape) #normally rank=5
+            shared = rank-2 #normally shared=3
 
             # if shared > 26 - 4:
             #     raise 'Not enough letters in the alphabet to use Einstein notation'
@@ -991,7 +1010,7 @@ class Conv2DCapsule(tf.layers.Layer):
 
             # reshape to [B*D_out, T, F, N_in*N_out]
             #predictions = tf.transpose(predictions, range(shared-1) + [shared+1, shared+2, shared-1, shared])
-            predictions = tf.transpose(predictions, range(shared-2)+[rank, shared-2, shared-1, rank-2, rank-1, ])
+            predictions = tf.transpose(predictions, range(shared-2)+[rank, shared-2, shared-1, rank-2, rank-1])
             predictions = tf.reshape(predictions,
                                     [batch_size*self.capsule_dim,
                                     -1, num_freq_in, num_capsule_in*self.num_capsules])
@@ -1042,17 +1061,18 @@ class Conv2DCapsule(tf.layers.Layer):
 
         return predictions, logits
 
-    def depthwise_predict(self, inputs):
+    def full_predict(self, inputs):
         '''
         compute the predictions for the output capsules and initialize the
         routing logits
         args:
             inputs: the inputs to the layer. the final two dimensions are
                 num_capsules_in and capsule_dim_in
+                expects inputs of dimension [B, T, F, N_in, D_in]
         returns: the output capsule predictions
         '''
 
-        with tf.name_scope('depthwise_predict'):
+        with tf.name_scope('predict'):
 
             batch_size = inputs.shape[0].value
             num_freq_in = inputs.shape[-3].value
@@ -1061,35 +1081,45 @@ class Conv2DCapsule(tf.layers.Layer):
             capsule_dim_in = inputs.shape[-1].value
 
             #number of shared dimensions
-            rank = len(inputs.shape)
-            shared = rank-4
+            rank = len(inputs.shape) #normally rank=5
+            shared = rank-2 #normally shared=3
 
-            # pad the inputs with zeros along the freq dimension
-            with tf.name_scope('zero_padding'):
-                half_kernel = self.kernel_size // 2
-                paddings = [[0, 0]] * shared + [[half_kernel, half_kernel]]*2 + [[0, 0], [0, 0]]
-                inputs = tf.pad(inputs, paddings, "CONSTANT")
+            # reshape to [B, T, F, N_in*D_in]
+            inputs = tf.reshape(inputs,
+                            [batch_size, -1, num_freq_in,
+                             num_capsule_in*capsule_dim_in])
 
-            # reshape to [B*T, F, D_in, N_in]
-            inputs = tf.reshape(inputs, shape=[-1, num_freq_in+2*half_kernel,
-                                               capsule_dim_in, num_capsule_in])
+            if not self.transpose :
+                # convolution over time and frequency
+                # predictions = tf.layers.conv2d(predictions,
+                #                                filters=1,
+                #                                kernel_size=[1,self.kernel_size],
+                #                                strides=self.stride,
+                #                                padding="SAME",
+                #                                use_bias=False)
+                predictions = tf.nn.depthwise_conv2d(inputs, self.full_kernel,
+                                                     strides=[1, self.strides[0], self.strides[1], 1],
+                                                     padding=self.padding)
+                # reshape to [B, T, F, N_in, D_in, N_out, D_out]
+                predictions = tf.reshape(predictions,
+                                         [batch_size, -1, num_freq_out,
+                                          num_capsule_in, capsule_dim_in,
+                                          self.num_capsules, self.capsule_dim])
+                # sum over D_in dimension
+                predictions = tf.reduce_sum(predictions, -3)
 
-            # inputs = tf.reshape(inputs, shape=[-1, num_freq_in,
-            #                                    capsule_dim_in, num_capsule_in])
 
-            # reshape the kernel to [W, D_in, N_in, N_out*D_out]
-            kernel = tf.transpose(self.kernel, [0, 2, 1, 3, 4])
-            kernel = tf.reshape(kernel, shape=[self.kernel_size, capsule_dim_in, num_capsule_in,
-                                               self.num_capsules*self.capsule_dim])
+            else :
+                predictions = tf.layers.conv2d_transpose(
+                    inputs=inputs,
+                    filters=self.num_capsules*num_capsule_in,
+                    kernel_size=self.kernel_size,
+                    strides=self.strides,
+                    padding=self.padding,
+                    use_bias=False)
 
-            # tensorflow does not pad along the D_in dimension with stride=D_in for that axis
-            # but no support for different strides yet, so need manual padding
-            predictions = tf.nn.depthwise_conv2d(inputs, kernel,
-                                    strides=[1, self.stride, self.stride, 1],
-                                    padding='VALID')
-            predictions = tf.reshape(predictions, shape=[batch_size, -1, num_freq_out, num_capsule_in, self.num_capsules, self.capsule_dim])
 
-            # tile the logits for each shared dimesion (batch, time)
+            # tile the logits for each shared dimesion (batch, time, frequency)
             with tf.name_scope('tile_logits'):
                 logits = self.logits
                 for i in range(shared):
@@ -1101,6 +1131,128 @@ class Conv2DCapsule(tf.layers.Layer):
                     logits = tf.tile(tf.expand_dims(logits, 0), tile)
 
         return predictions, logits
+
+
+    def simple_predict(self, inputs):
+        '''
+        compute the predictions for the output capsules and initialize the
+        routing logits
+        args:
+            inputs: the inputs to the layer. the final two dimensions are
+                num_capsules_in and capsule_dim_in
+                expects inputs of dimension [B, T, F, N_in, D_in]
+        returns: the output capsule predictions
+        '''
+
+        with tf.name_scope('predict'):
+
+            batch_size = inputs.shape[0].value
+            num_freq_in = inputs.shape[-3].value
+            num_freq_out = num_freq_in
+            num_capsule_in = inputs.shape[-2].value
+            capsule_dim_in = inputs.shape[-1].value
+
+            #number of shared dimensions
+            rank = len(inputs.shape) #normally rank=5
+            shared = rank-2 #normally shared=3
+
+            # reshape to [B, T, F, N_in*D_in]
+            inputs = tf.reshape(inputs,
+                            [batch_size, -1, num_freq_in,
+                             num_capsule_in*capsule_dim_in])
+
+
+            # convolution over time and frequency
+            predictions = tf.layers.conv2d(inputs,
+                                           filters=num_capsule_in*self.num_capsules*self.capsule_dim,
+                                           kernel_size=self.kernel_size,
+                                           strides=self.strides,
+                                           padding="SAME",
+                                           use_bias=False)
+
+            # reshape to [B, T, F, N_in, N_out, D_out]
+            predictions = tf.reshape(predictions,
+                                     [batch_size, -1, num_freq_out,
+                                      num_capsule_in,
+                                      self.num_capsules, self.capsule_dim])
+
+
+            # tile the logits for each shared dimesion (batch, time, frequency)
+            with tf.name_scope('tile_logits'):
+                logits = self.logits
+                for i in range(shared):
+                    if predictions.shape[shared-i-1].value is None:
+                        shape = tf.shape(predictions)[shared-i-1]
+                    else:
+                        shape = predictions.shape[shared-i-1].value
+                    tile = [shape] + [1]*len(logits.shape)
+                    logits = tf.tile(tf.expand_dims(logits, 0), tile)
+
+        return predictions, logits
+
+
+    def loop_predict(self, inputs):
+        '''
+        compute the predictions for the output capsules and initialize the
+        routing logits
+        args:
+            inputs: the inputs to the layer. the final two dimensions are
+                num_capsules_in and capsule_dim_in
+                expects inputs of dimension [B, T, F, N_in, D_in]
+        returns: the output capsule predictions
+        '''
+
+        with tf.name_scope('predict'):
+
+            batch_size = inputs.shape[0].value
+            num_freq_in = inputs.shape[-3].value
+            num_freq_out = num_freq_in
+            num_capsule_in = inputs.shape[-2].value
+            capsule_dim_in = inputs.shape[-1].value
+
+            #number of shared dimensions
+            rank = len(inputs.shape) #normally rank=5
+            shared = rank-2 #normally shared=3
+
+            slice = inputs[:, :, :, 0, :]
+            # convolution over time and frequency
+            prev_slice = tf.layers.conv2d(slice, self.num_capsules*self.capsule_dim,
+                                                kernel_size=self.kernel_size,
+                                                strides=self.strides,
+                                                padding=self.padding)
+            prev_slice = tf.expand_dims(prev_slice, 3)
+
+            for i in range(1, num_capsule_in):
+                slice = inputs[:,:,:,i,:]
+                # convolution over time and frequency
+                prediction_slice = tf.layers.conv2d(slice, self.num_capsules*self.capsule_dim,
+                                                    kernel_size=self.kernel_size,
+                                                     strides=self.strides,
+                                                     padding=self.padding)
+                prediction_slice = tf.expand_dims(prediction_slice, 3)
+                prev_slice = tf.concat([prev_slice, prediction_slice], 3)
+
+
+            # reshape to [B, T, F, N_in, N_out, D_out]
+            predictions = tf.reshape(prev_slice,
+                                     [batch_size, -1, num_freq_out,
+                                      num_capsule_in,
+                                      self.num_capsules, self.capsule_dim])
+
+            # tile the logits for each shared dimension (batch, time, frequency)
+            with tf.name_scope('tile_logits'):
+                logits = self.logits
+                for i in range(shared):
+                    if predictions.shape[shared-i-1].value is None:
+                        shape = tf.shape(predictions)[shared-i-1]
+                    else:
+                        shape = predictions.shape[shared-i-1].value
+                    tile = [shape] + [1]*len(logits.shape)
+                    logits = tf.tile(tf.expand_dims(logits, 0), tile)
+
+        return predictions, logits
+
+
 
     def conv2d_matmul_predict(self, inputs):
         '''
@@ -1135,25 +1287,25 @@ class Conv2DCapsule(tf.layers.Layer):
             with tf.name_scope('group_freqs'):
                 #create a filter that selects the values of the frequencies
                 # within the convolution kernel
-                tile_filter = np.zeros(shape=[self.kernel_size, self.kernel_size,
-                                        n_in*d_in, self.kernel_size*self.kernel_size],
+                tile_filter = np.zeros(shape=[self.kernel_size[0], self.kernel_size[0],
+                                        n_in*d_in, self.kernel_size[0]*self.kernel_size[1]],
                                         dtype=self.dtype)
-                for i in range(self.kernel_size):
-                    for j in range(self.kernel_size):
-                        tile_filter[i, j, :, i*self.kernel_size+j] = 1
+                for i in range(self.kernel_size[1]):
+                    for j in range(self.kernel_size[0]):
+                        tile_filter[i, j, :, i*self.kernel_size[1]+j] = 1
                 tile_filter_op = tf.constant(tile_filter)
 
                 #Convolution with padding
                 inputs = tf.nn.depthwise_conv2d(inputs, tile_filter_op,
-                                                strides=[1, self.stride, self.stride, 1],
+                                                strides=[1, self.strides[0], self.strides[0], 1],
                                                 padding='SAME')
                 # output_shape = tf.shape(inputs)
                 # output_shape[1] should equal num_freq_out if no padding
                 # reshape back to [B, T, F_out, N_in, D_in, W_f]
                 inputs = tf.reshape(inputs, shape=[batch_size, -1, num_freq_out,
-                                                   n_in, d_in, self.kernel_size*self.kernel_size])
+                                                   n_in, d_in, self.kernel_size[0]*self.kernel_size[1]])
                 #transpose back so the last four dimensions are
-                #  [... x num_freq_out x num_capsule_in x kernel_size x capsule_dim_in]
+                #  [... x num_freq_out x num_capsule_in x kernel_size*kernel_size x capsule_dim_in]
                 inputs_split = tf.transpose(inputs, range(shared+1) + [shared+2, shared+1])
 
             #tile the inputs over the num_capsules output dimension
@@ -1166,13 +1318,9 @@ class Conv2DCapsule(tf.layers.Layer):
             #change the capsule dimensions into column vectors
             inputs_tiled = tf.expand_dims(inputs_tiled,-1)
 
-            #transpose the kernel so the dimensions are
-            # [num_capsules_in x num_capsules_out x kernel_size x capsule_dim_out x capsule_dim_in]
-            kernel = tf.transpose(self.kernel, [1, 3, 0, 4, 2])
-
             #tile the kernel for every shared dimension (batch, time) and num_freq_out
             with tf.name_scope('tile_kernel'):
-                kernel_tiled = kernel
+                kernel_tiled = self.matmul_kernel
                 for i in range(shared):
                     if inputs_tiled.shape[shared-i-1].value is None:
                         shape = tf.shape(inputs_tiled)[shared-i-1]

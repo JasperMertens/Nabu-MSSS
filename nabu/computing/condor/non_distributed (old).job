@@ -34,9 +34,6 @@ Requirements = (CUDACapability >= 3.0)\
    && (machine != "spchcl23.esat.kuleuven.be")\
    && (machine != "slot1@beryl.esat.kuleuven.be")\
    && (machine != "beryl.esat.kuleuven.be")\
-   && (machine != "malachite.esat.kuleuven.be")\
-   && (machine != "vladimir.esat.kuleuven.be")\
-   && (machine != "andromeda.esat.kuleuven.be")\
 # machines below are removed since using 8 cpus is faster\\
   && (machine != "tiger.esat.kuleuven.be")\
   && (machine != "molder.esat.kuleuven.be")\
