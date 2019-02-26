@@ -351,8 +351,8 @@ class MultiTaskTrainer(object):
 		# create a hook for saving the final model
 		save_hook = hooks.SaveAtEnd(
 			os.path.join(self.expdir, 'model', 'network.ckpt'),
-			self.models,
-			self.should_save_final_model)
+			self.models)
+			# self.should_save_final_model)
 		chief_only_hooks.append(save_hook)
 
 		# create a hook for saving and restoring the validated model

@@ -3,13 +3,13 @@ this is the file that should be run for experiments"""
 
 import sys
 import os
+sys.path.append(os.getcwd())
 import shutil
 import subprocess
 import tensorflow as tf
 from six.moves import configparser
 from train import train
 import pdb
-sys.path.append(os.getcwd())
 
 
 def main(expdir, recipe, computing, resume, duplicates, sweep_flag):

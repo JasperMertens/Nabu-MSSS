@@ -899,19 +899,19 @@ class Conv2DCapsule(tf.layers.Layer):
         if capsule_dim_in is None:
             raise ValueError('input capsules dimension must be defined')
 
-        self.kernel = self.add_variable(
-            name='kernel',
-            dtype=self.dtype,
-            shape=[num_capsules_in, capsule_dim_in,
-                    self.num_capsules, self.capsule_dim],
-            initializer=self.kernel_initializer)
-
-        self.tf_kernel = self.add_variable(
-            name='tf_kernel',
-            dtype=self.dtype,
-            shape=[self.kernel_size[0], self.kernel_size[1],
-                num_capsules_in*self.num_capsules, 1],
-            initializer=self.kernel_initializer)
+        # self.kernel = self.add_variable(
+        #     name='kernel',
+        #     dtype=self.dtype,
+        #     shape=[num_capsules_in, capsule_dim_in,
+        #             self.num_capsules, self.capsule_dim],
+        #     initializer=self.kernel_initializer)
+        #
+        # self.tf_kernel = self.add_variable(
+        #     name='tf_kernel',
+        #     dtype=self.dtype,
+        #     shape=[self.kernel_size[0], self.kernel_size[1],
+        #         num_capsules_in*self.num_capsules, 1],
+        #     initializer=self.kernel_initializer)
             # constraint=constraint.unit_norm([0,1]))
 
         # self.full_kernel = self.add_variable(
@@ -953,7 +953,7 @@ class Conv2DCapsule(tf.layers.Layer):
         '''
 
         #compute the predictions
-        predictions, logits = self.predict(inputs)
+        predictions, logits = self.simple_predict(inputs)
 
         #cluster the predictions
         outputs = self.cluster(predictions, logits)
@@ -1168,7 +1168,7 @@ class Conv2DCapsule(tf.layers.Layer):
                                            kernel_size=self.kernel_size,
                                            strides=self.strides,
                                            padding="SAME",
-                                           use_bias=False)
+                                           use_bias=True)
 
             # reshape to [B, T, F, N_in, N_out, D_out]
             predictions = tf.reshape(predictions,

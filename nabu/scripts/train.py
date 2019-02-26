@@ -3,13 +3,13 @@ this file will do the training"""
 
 import sys
 import os
+sys.path.append(os.getcwd())
 import tensorflow as tf
 from six.moves import configparser
 from nabu.neuralnetworks.trainers import trainer_factory
 import json
 import math
 
-sys.path.append(os.getcwd())
 
 
 def train(clusterfile, job_name, task_index, ssh_command, expdir):
