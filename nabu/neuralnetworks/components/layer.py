@@ -899,7 +899,7 @@ class Conv2DCapsule(tf.layers.Layer):
             raise ValueError('number of input capsules must be defined')
         if capsule_dim_in is None:
             raise ValueError('input capsules dimension must be defined')
-        #
+
         # self.kernel = self.add_variable(
         #     name='kernel',
         #     dtype=self.dtype,
@@ -926,14 +926,23 @@ class Conv2DCapsule(tf.layers.Layer):
         #     initializer=self.kernel_initializer)
 
         #[num_capsules_in x num_capsules_out x kernel_size * kernel_size x capsule_dim_out x capsule_dim_in]
-        self.matmul_kernel = self.add_variable(
-            name='matmul_kernel',
-            dtype=self.dtype,
-            shape=[num_capsules_in, self.num_capsules,
-                   self.kernel_size[0]*self.kernel_size[1],
-                   self.capsule_dim, capsule_dim_in],
-            initializer=self.kernel_initializer)
+        # self.matmul_kernel = self.add_variable(
+        #     name='matmul_kernel',
+        #     dtype=self.dtype,
+        #     shape=[num_capsules_in, self.num_capsules,
+        #            self.kernel_size[0]*self.kernel_size[1],
+        #            self.capsule_dim, capsule_dim_in],
+        #     initializer=self.kernel_initializer)
 
+        # [num_capsules_in x num_capsules_out x kernel_size * kernel_size x capsule_dim_out x capsule_dim_in]
+        # self.tensordot_kernel = self.add_variable(
+        #     name='tensordot_kernel',
+        #     dtype=self.dtype,
+        #     shape=[self.kernel_size[0]*self.kernel_size[1]*num_capsules_in,
+        #            capsule_dim_in,
+        #             self.num_capsules, self.capsule_dim],
+        #     initializer=self.kernel_initializer)
+        #
         self.logits = self.add_variable(
             name='init_logits',
             dtype=self.dtype,
@@ -956,7 +965,7 @@ class Conv2DCapsule(tf.layers.Layer):
         '''
 
         #compute the predictions
-        predictions, logits = self.conv2d_matmul_predict(inputs)
+        predictions, logits = self.loop_predict(inputs)
 
         #cluster the predictions
         outputs = self.cluster(predictions, logits)
@@ -1224,7 +1233,8 @@ class Conv2DCapsule(tf.layers.Layer):
                     conv = tf.layers.conv2d(slice, self.num_capsules*self.capsule_dim,
                                                     kernel_size=self.kernel_size,
                                                     strides=self.strides,
-                                                    padding=self.padding)
+                                                    padding=self.padding,
+                                                    use_bias=False)
                     expanded = tf.expand_dims(conv, 3)
                     convs.append(expanded)
 
@@ -1331,8 +1341,8 @@ class Conv2DCapsule(tf.layers.Layer):
             d_in = inputs.shape[-1].value
 
             #number of shared dimensions
-            rank = len(inputs.shape)
-            shared = rank-2
+            rank = len(inputs.shape) # rank=5
+            shared = rank-2 # shared=3
 
             #reshape the inputs to [B, T, F, N_in*D_in]
             inputs = tf.reshape(inputs, shape=[batch_size, -1,
@@ -1362,6 +1372,11 @@ class Conv2DCapsule(tf.layers.Layer):
                 #  [... x num_freq_out x num_capsule_in x kernel_size*kernel_size x capsule_dim_in]
                 inputs_split = tf.transpose(inputs, range(shared+1) + [shared+2, shared+1])
 
+                # test if group_freqs takes a long time, it does not
+                # inputs_split = tf.expand_dims(inputs, -2)
+                # mult = [1]*(shared+1) + [self.kernel_size[0]*self.kernel_size[1], 1]
+                # inputs_split = tf.tile(inputs_split, mult)
+
             #tile the inputs over the num_capsules output dimension
             # so the last five dimensions are
             # [... x num_freq_out x num_capsule_in x num_capsule_out x kernel_size*kernel_size x capsule_dim_in]
@@ -1385,12 +1400,110 @@ class Conv2DCapsule(tf.layers.Layer):
 
             #compute the predictions
             with tf.name_scope('compute_predictions'):
-                #perform matrix multiplications so the last four dimensions are
+                #perform matrix multiplications so the last five dimensions are
                 # [... x num_freq_out x num_capsule_in x num_capsule_out  x kernel_size*kernel_size x capsule_dim_out]
                 predictions = tf.squeeze(tf.matmul(kernel_tiled, inputs_tiled), -1)
+                #predictions = tf.squeeze(inputs_tiled, -1)
 
                 #sum over the kernel_size dimension
                 predictions = tf.reduce_sum(predictions, -2)
+
+            # tile the logits for each shared dimesion (batch, time)
+            with tf.name_scope('tile_logits'):
+                logits = self.logits
+                for i in range(shared):
+                    if predictions.shape[shared-i-1].value is None:
+                        shape = tf.shape(predictions)[shared-i-1]
+                    else:
+                        shape = predictions.shape[shared-i-1].value
+                    tile = [shape] + [1]*len(logits.shape)
+                    logits = tf.tile(tf.expand_dims(logits, 0), tile)
+
+        return predictions, logits
+
+    def tensordot_predict(self, inputs):
+        '''
+        compute the predictions for the output capsules and initialize the
+        routing logits
+        args:
+            inputs: the inputs to the layer. the final two dimensions are
+                num_capsules_in and capsule_dim_in
+        returns: the output capsule predictions
+        '''
+
+        with tf.name_scope('tensordot_predict'):
+
+        # code based on https://jhui.github.io/2017/11/14/Matrix-Capsules-with-EM-routing-Capsule-Network/ (18-11-'18)
+
+            batch_size = inputs.shape[0].value
+            num_freq_in = inputs.shape[-3].value
+            num_freq_out = num_freq_in
+            #without padding:
+            #num_freq_out = (num_freq_in-self.kernel_size+1)/self.stride
+            n_in = inputs.shape[-2].value
+            d_in = inputs.shape[-1].value
+
+            #number of shared dimensions
+            rank = len(inputs.shape) # rank=5
+            shared = rank-2 # shared=3
+
+            #reshape the inputs to [B, T, F, N_in*D_in]
+            inputs = tf.reshape(inputs, shape=[batch_size, -1,
+                                               num_freq_in, n_in*d_in])
+
+            with tf.name_scope('group_freqs'):
+                #create a filter that selects the values of the frequencies
+                # within the convolution kernel
+                tile_filter = np.zeros(shape=[self.kernel_size[0], self.kernel_size[1],
+                                        n_in*d_in, self.kernel_size[0]*self.kernel_size[1]],
+                                        dtype=self.dtype)
+                for i in range(self.kernel_size[1]):
+                    for j in range(self.kernel_size[0]):
+                        tile_filter[i, j, :, i*self.kernel_size[0]+j] = 1
+                tile_filter_op = tf.constant(tile_filter)
+
+                #Convolution with padding
+                inputs = tf.nn.depthwise_conv2d(inputs, tile_filter_op,
+                                                strides=[1, self.strides[0], self.strides[0], 1],
+                                                padding='SAME')
+                # output_shape = tf.shape(inputs)
+                # output_shape[1] should equal num_freq_out if no padding
+                # reshape back to [B, T, F_out, N_in, D_in, W*W]
+                inputs = tf.reshape(inputs, shape=[batch_size, -1, num_freq_out,
+                                                   n_in, d_in, self.kernel_size[0]*self.kernel_size[1]])
+                #transpose back so the last four dimensions are
+                #  [... x num_freq_out x num_capsule_in x kernel_size*kernel_size x capsule_dim_in]
+                inputs = tf.transpose(inputs, range(shared) + [shared+2, shared, shared+1])
+
+                #reshape to [B, T, F, W*W*N_in, D_in]
+                inputs = tf.reshape(inputs, shape=[batch_size, -1, num_freq_out,
+                                                   self.kernel_size[0]*self.kernel_size[1]*n_in, d_in])
+
+            #compute the predictions
+            with tf.name_scope('compute_predictions'):
+                #inputs: [B, T, F, W*W*N_in, D_in]
+                #kernel: [W*W*N_in, D_in, N_out, D_out]
+
+                # put the input capsules within the kernel as the first dimension
+                inputs = tf.transpose(inputs, [shared] + range(shared) + [rank - 1])
+
+                # compute the predictions
+                predictions = tf.map_fn(
+                    fn=lambda x: tf.tensordot(x[0], x[1], [[shared], [0]]),
+                    elems=(inputs, self.tensordot_kernel),
+                    dtype=self.dtype or tf.float32)
+
+                # transpose back
+                predictions = tf.transpose(
+                    predictions, range(1, shared + 1) + [0] + [rank - 1, rank])
+
+                #reshape back to [B, T, F, W*W, N_in, N_out, D_out]
+                predictions = tf.reshape(predictions, shape=[batch_size, -1, num_freq_out,
+                                                   self.kernel_size[0]*self.kernel_size[1],
+                                                             n_in, self.num_capsules, self.capsule_dim])
+
+                #sum over the kernel_size dimension
+                predictions = tf.reduce_sum(predictions, shared)
 
             # tile the logits for each shared dimesion (batch, time)
             with tf.name_scope('tile_logits'):
