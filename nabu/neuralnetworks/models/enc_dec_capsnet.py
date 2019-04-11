@@ -37,22 +37,14 @@ class EncDecCapsNet(model.Model):
         num_decoder_layers = num_encoder_layers
         num_centre_layers = int(self.conf['num_centre_layers'])
 
-
         # the encoder layers
         encoder_layers = []
-        # the primary capsules
-        output_dim = num_capsules_1st_layer * capsule_dim
-        encoder_layers.append(tf.layers.Conv2D(
-            filters=output_dim,
-            kernel_size=kernel_size,
-            strides=(1, 1),
-            padding='SAME'))
-        for l in range(1, num_encoder_layers):
+        for l in range(0, num_encoder_layers):
             num_capsules_l = num_capsules_1st_layer * 2**l
-            stride = min(l*2,4)
+            #stride = min(l*2,4)
             # strides = (stride, stride)
-            strides = (1,1)
-            max_pool_filter = [1, 1]
+            strides = (3, 3)
+            # max_pool_filter = [1, 1]
             # if np.mod(l+1, t_pool_rate) == 0:
             #     max_pool_filter[0] = 2
             # if np.mod(l+1, f_pool_rate) == 0:
@@ -63,7 +55,6 @@ class EncDecCapsNet(model.Model):
                                                     kernel_size=kernel_size,
                                                     strides=strides,
                                                     padding='SAME',
-                                                    max_pool_filter=max_pool_filter,
                                                     routing_iters=routing_iters))
 
         # the centre layers
@@ -76,12 +67,11 @@ class EncDecCapsNet(model.Model):
                                               kernel_size=kernel_size,
                                               strides=(1,1),
                                               padding='SAME',
-                                              max_pool_filter=(1, 1),
                                               routing_iters=routing_iters))
 
         # the decoder layers
         decoder_layers = []
-        for l in range(num_encoder_layers-1):
+        for l in range(num_encoder_layers):
             corresponding_encoder_l = num_encoder_layers-1-l
             num_capsules_l = encoder_layers[corresponding_encoder_l].num_capsules
             strides = encoder_layers[corresponding_encoder_l].strides
@@ -91,24 +81,23 @@ class EncDecCapsNet(model.Model):
                                               kernel_size=kernel_size,
                                               strides=strides,
                                               padding='SAME',
-                                              max_pool_filter=(1, 1),
                                               transpose=True,
                                               routing_iters=routing_iters))
 
         #last encoder
-        strides = [1, 1]
-        # if np.mod(1, t_pool_rate) == 0:
-        #     strides[0] = 2
-        # if np.mod(1, f_pool_rate) == 0:
-        #     strides[1] = 2
-        decoder_layers.append(layer.Conv2DCapsule(num_capsules=num_capsules_1st_layer,
-                                                  capsule_dim=capsule_dim,
-                                                  kernel_size=kernel_size,
-                                                  strides=strides,
-                                                  padding='SAME',
-                                                  max_pool_filter=(1, 1),
-                                                  transpose=True,
-                                                  routing_iters=routing_iters))
+        # strides = [1, 1]
+        # # if np.mod(1, t_pool_rate) == 0:
+        # #     strides[0] = 2
+        # # if np.mod(1, f_pool_rate) == 0:
+        # #     strides[1] = 2
+        # decoder_layers.append(layer.Conv2DCapsule(num_capsules=num_capsules_1st_layer,
+        #                                           capsule_dim=capsule_dim,
+        #                                           kernel_size=kernel_size,
+        #                                           strides=strides,
+        #                                           padding='SAME',
+        #                                           max_pool_filter=(1, 1),
+        #                                           transpose=True,
+        #                                           routing_iters=routing_iters))
 
         #code not available for multiple inputs!!
         if len(inputs) > 1:
@@ -132,9 +121,16 @@ class EncDecCapsNet(model.Model):
                     # Convolution
                     batch_size = logits.shape[0].value
                     num_freq = logits.shape[2].value
+                    output_dim = num_capsules_1st_layer * capsule_dim
                     logits = tf.expand_dims(logits, -1)
 
-                    primary_capsules = encoder_layers[0](logits)
+                    primary_capsules = tf.layers.conv2d(
+                        logits,
+                        output_dim,
+                        kernel_size,
+                        strides = (1,1),
+                        padding='SAME'
+                    )
 
                     primary_capsules = tf.reshape(primary_capsules,
                                                   [batch_size,
@@ -146,10 +142,9 @@ class EncDecCapsNet(model.Model):
 
                     primary_capsules = ops.squash(primary_capsules)
                     logits = tf.identity(primary_capsules, 'primary_capsules')
-                    encoder_outputs.append(logits)
 
 
-                for l in range(1,num_encoder_layers):
+                for l in range(num_encoder_layers):
                     with tf.variable_scope('layer_%s'%l):
                         logits = encoder_layers[l](logits)
 
@@ -184,34 +179,48 @@ class EncDecCapsNet(model.Model):
 
                         #get wanted output size
                         if corresponding_encoder_l==0:
-                            wanted_size = tf.shape(inputs)
+                            wanted_size_tensor = tf.shape(inputs)
+                            wanted_size = primary_capsules.shape
                         else:
-                            wanted_size = tf.shape(encoder_outputs[corresponding_encoder_l-1])
+                            wanted_size_tensor = tf.shape(encoder_outputs[corresponding_encoder_l-1])
+                            wanted_size = encoder_outputs[corresponding_encoder_l-1].shape
                         #if corresponding_encoder_l==0:
                             #wanted_size = inputs.get_shape()
                         #else:
                             #wanted_size = encoder_outputs[corresponding_encoder_l-1].get_shape()
                         logits = decoder_layers[l](decoder_input)
 
-                        # wanted_t_size = wanted_size[1]
-                        # wanted_f_size = wanted_size[2]
-                        #
-                        # #get actual output size
-                        # output_size = tf.shape(logits)
-                        # #output_size = logits.get_shape()
-                        # output_t_size = output_size[1]
-                        # output_f_size = output_size[2]
-                        #
-                        # #compensate for potential mismatch, by adding duplicates
-                        # missing_t_size = wanted_t_size-output_t_size
-                        # missing_f_size = wanted_f_size-output_f_size
-                        #
-                        # last_t_slice = tf.expand_dims(logits[:,-1,:,:,:],1)
-                        # duplicate_logits = tf.tile(last_t_slice,[1,missing_t_size,1,1,1])
-                        # logits = tf.concat([logits, duplicate_logits], 1)
-                        # last_f_slice = tf.expand_dims(logits[:,:,-1,:,:],2)
-                        # duplicate_logits = tf.tile(last_f_slice,[1,1,missing_f_size,1,1])
-                        # logits = tf.concat([logits, duplicate_logits], 2)
+                        wanted_t_size = wanted_size_tensor[1]
+                        wanted_f_size = wanted_size_tensor[2]
+
+                        #get actual output size
+                        output_size = tf.shape(logits)
+                        #output_size = logits.get_shape()
+                        output_t_size = output_size[1]
+                        output_f_size = output_size[2]
+
+                        #compensate for potential mismatch, by adding duplicates
+                        missing_t_size = wanted_t_size-output_t_size
+                        missing_f_size = wanted_f_size-output_f_size
+
+                        def t_tiling(logits_to_tile):
+                            last_t_slice = tf.expand_dims(logits_to_tile[:, -1, :, :, :], 1)
+                            duplicate_logits = tf.tile(last_t_slice, [1, missing_t_size, 1, 1, 1])
+                            tiled_logits = tf.concat([logits_to_tile, duplicate_logits], 1)
+                            return tiled_logits
+
+                        def f_tiling(logits_to_tile):
+                            last_f_slice = tf.expand_dims(logits_to_tile[:, :, -1, :, :], 2)
+                            duplicate_logits = tf.tile(last_f_slice, [1, 1, missing_f_size, 1, 1])
+                            tiled_logits = tf.concat([logits_to_tile, duplicate_logits], 2)
+                            return tiled_logits
+
+
+                        logits = tf.cond(missing_t_size > 0, lambda: t_tiling(logits),
+                                         lambda: tf.slice(logits, [0,0,0,0,0], [-1, wanted_t_size, -1, -1, -1]))
+                        logits = tf.cond(missing_f_size > 0, lambda: f_tiling(logits),
+                                         lambda: tf.slice(logits, [0, 0, 0, 0, 0], [-1, -1, wanted_f_size, -1, -1]))
+                        logits.set_shape(wanted_size)
 
                 output = logits
                 # Include frequency dimension

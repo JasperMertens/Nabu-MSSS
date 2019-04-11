@@ -890,7 +890,7 @@ class Conv2DCapsule(tf.layers.Layer):
         num_freq_in = input_shape[-3].value
         num_capsules_in = input_shape[-2].value
         capsule_dim_in = input_shape[-1].value
-        num_freq_out = num_freq_in
+        #num_freq_out = num_freq_in
         #without padding:
         #num_freq_out = (num_freq_in-self.kernel_size+1)/self.stride
         k = self.kernel_size[0]/2
@@ -900,22 +900,20 @@ class Conv2DCapsule(tf.layers.Layer):
         if capsule_dim_in is None:
             raise ValueError('input capsules dimension must be defined')
 
-        self.kernel = self.add_variable(
-            name='kernel',
-            dtype=self.dtype,
-            shape=[num_capsules_in, capsule_dim_in,
-                    self.num_capsules, self.capsule_dim],
-            initializer=self.kernel_initializer)
-        #
-        self.tf_kernel = self.add_variable(
-            name='tf_kernel',
-            dtype=self.dtype,
-            shape=[self.kernel_size[0], self.kernel_size[1],
-                num_capsules_in*self.num_capsules, 1],
-            initializer=self.kernel_initializer,
-            constraint= lambda x: tf.scatter_nd_update(x, indices=[[k,k]],
-                    updates=tf.ones([1,num_capsules_in*self.num_capsules, 1])))
-            # constraint=constraint.unit_norm([0,1]))
+        # self.kernel = self.add_variable(
+        #     name='kernel',
+        #     dtype=self.dtype,
+        #     shape=[num_capsules_in, capsule_dim_in,
+        #             self.num_capsules, self.capsule_dim],
+        #     initializer=self.kernel_initializer)
+        # #
+        # self.tf_kernel = self.add_variable(
+        #     name='tf_kernel',
+        #     dtype=self.dtype,
+        #     shape=[self.kernel_size[0], self.kernel_size[1],
+        #         num_capsules_in*self.num_capsules, 1],
+        #     initializer=self.kernel_initializer,
+        #     constraint=tf.keras.constraints.UnitNorm(axis=[0, 1, 2]))
 
         # self.full_kernel = self.add_variable(
         #     name='full_kernel',
@@ -965,7 +963,7 @@ class Conv2DCapsule(tf.layers.Layer):
         '''
 
         #compute the predictions
-        predictions, logits = self.predict(inputs)
+        predictions, logits = self.loop_predict(inputs)
 
         #cluster the predictions
         outputs = self.cluster(predictions, logits)
@@ -1217,7 +1215,7 @@ class Conv2DCapsule(tf.layers.Layer):
 
             batch_size = inputs.shape[0].value
             num_freq_in = inputs.shape[-3].value
-            num_freq_out = num_freq_in
+            #num_freq_out = int(np.ceil(float(num_freq_in)/float(self.strides[1])))
             num_capsule_in = inputs.shape[-2].value
             capsule_dim_in = inputs.shape[-1].value
 
@@ -1226,76 +1224,26 @@ class Conv2DCapsule(tf.layers.Layer):
             shared = rank-2 #normally shared=3
 
             convs = []
-
             for i in range(0, num_capsule_in):
-                with tf.name_scope('conv_2d%d' % i): #<- required otherwise the networks fails
+                with tf.name_scope('conv_2d%d' % i):
                     slice = inputs[:, :, :, i, :]
-                    conv = tf.layers.conv2d(slice, self.num_capsules*self.capsule_dim,
-                                                    kernel_size=self.kernel_size,
-                                                    strides=self.strides,
-                                                    padding=self.padding,
-                                                    use_bias=False)
+                    if self.transpose:
+                        conv = tf.layers.conv2d_transpose(slice, self.num_capsules * self.capsule_dim,
+                                                kernel_size=self.kernel_size,
+                                                strides=self.strides,
+                                                padding=self.padding,
+                                                use_bias=False)
+                    else:
+                        conv = tf.layers.conv2d(slice, self.num_capsules*self.capsule_dim,
+                                                        kernel_size=self.kernel_size,
+                                                        strides=self.strides,
+                                                        padding=self.padding,
+                                                        use_bias=False)
                     expanded = tf.expand_dims(conv, 3)
                     convs.append(expanded)
 
-            # slice = inputs[:, :, :, 0, :]
-            # conv = tf.layers.conv2d(slice, self.num_capsules * self.capsule_dim,
-            #                         kernel_size=self.kernel_size,
-            #                         strides=self.strides,
-            #                         padding=self.padding)
-            # expanded = tf.expand_dims(conv, 3);
-            # convs.append(expanded)
-            # slice = inputs[:, :, :, 1, :]
-            # conv = tf.layers.conv2d(slice, self.num_capsules * self.capsule_dim,
-            #                         kernel_size=self.kernel_size,
-            #                         strides=self.strides,
-            #                         padding=self.padding)
-            # expanded = tf.expand_dims(conv, 3);
-            # convs.append(expanded)
-            # slice = inputs[:, :, :, 2, :]
-            # conv = tf.layers.conv2d(slice, self.num_capsules * self.capsule_dim,
-            #                         kernel_size=self.kernel_size,
-            #                         strides=self.strides,
-            #                         padding=self.padding)
-            # expanded = tf.expand_dims(conv, 3);
-            # convs.append(expanded)
-            # slice = inputs[:, :, :, 3, :]
-            # conv = tf.layers.conv2d(slice, self.num_capsules * self.capsule_dim,
-            #                         kernel_size=self.kernel_size,
-            #                         strides=self.strides,
-            #                         padding=self.padding)
-            # expanded = tf.expand_dims(conv, 3);
-            # convs.append(expanded)
-            # slice = inputs[:, :, :, 4, :]
-            # conv = tf.layers.conv2d(slice, self.num_capsules * self.capsule_dim,
-            #                         kernel_size=self.kernel_size,
-            #                         strides=self.strides,
-            #                         padding=self.padding)
-            # expanded = tf.expand_dims(conv, 3);
-            # convs.append(expanded)
-
             prev_slice = tf.concat(convs, 3)
-
-
-            # slice = inputs[:, :, :, 0, :]
-            # # convolution over time and frequency
-            # prev_slice = tf.layers.conv2d(slice, self.num_capsules*self.capsule_dim,
-            #                                     kernel_size=self.kernel_size,
-            #                                     strides=self.strides,
-            #                                     padding=self.padding)
-            # prev_slice = tf.expand_dims(prev_slice, 3)
-            #
-            #
-            # for i in range(1, num_capsule_in):
-            #     slice = inputs[:, :, :, i, :]
-            #     # convolution over time and frequency
-            #     prediction_slice = tf.layers.conv2d(slice, self.num_capsules*self.capsule_dim,
-            #                                         kernel_size=self.kernel_size,
-            #                                          strides=self.strides,
-            #                                          padding=self.padding)
-            #     next_slice = tf.expand_dims(prediction_slice, 3)
-            #     prev_slice = tf.concat([prev_slice, next_slice], 3)
-
+            num_freq_out = tf.shape(prev_slice)[2]
 
             # reshape to [B, T, F, N_in, N_out, D_out]
             predictions = tf.reshape(prev_slice,
