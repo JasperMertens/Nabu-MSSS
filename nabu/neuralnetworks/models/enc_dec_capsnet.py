@@ -42,13 +42,12 @@ class EncDecCapsNet(model.Model):
         for l in range(0, num_encoder_layers):
             num_capsules_l = num_capsules_1st_layer * 2**l
             #stride = min(l*2,4)
-            # strides = (stride, stride)
-            strides = (3, 3)
-            # max_pool_filter = [1, 1]
-            # if np.mod(l+1, t_pool_rate) == 0:
-            #     max_pool_filter[0] = 2
-            # if np.mod(l+1, f_pool_rate) == 0:
-            #     max_pool_filter[1] = 2
+            # strides = (2, 1)
+            strides = [1, 1]
+            if (t_pool_rate !=0) & (np.mod(l, t_pool_rate) == 0):
+                strides[0] = 2
+            if (f_pool_rate !=0) & (np.mod(l, f_pool_rate) == 0):
+                strides[1] = 2
 
             encoder_layers.append(layer.Conv2DCapsule(num_capsules=num_capsules_l,
                                                     capsule_dim=capsule_dim,
@@ -56,7 +55,7 @@ class EncDecCapsNet(model.Model):
                                                     strides=strides,
                                                     padding='SAME',
                                                     routing_iters=routing_iters))
-
+	    
         # the centre layers
         centre_layers = []
         for l in range(num_centre_layers):
@@ -143,7 +142,6 @@ class EncDecCapsNet(model.Model):
                     primary_capsules = ops.squash(primary_capsules)
                     logits = tf.identity(primary_capsules, 'primary_capsules')
 
-
                 for l in range(num_encoder_layers):
                     with tf.variable_scope('layer_%s'%l):
                         logits = encoder_layers[l](logits)
@@ -179,48 +177,50 @@ class EncDecCapsNet(model.Model):
 
                         #get wanted output size
                         if corresponding_encoder_l==0:
-                            wanted_size_tensor = tf.shape(inputs)
+                            wanted_size_tensor = tf.shape(primary_capsules)
                             wanted_size = primary_capsules.shape
                         else:
-                            wanted_size_tensor = tf.shape(encoder_outputs[corresponding_encoder_l-1])
+                            wanted_size_tensor = tf.shape(
+				encoder_outputs[corresponding_encoder_l-1])
                             wanted_size = encoder_outputs[corresponding_encoder_l-1].shape
                         #if corresponding_encoder_l==0:
                             #wanted_size = inputs.get_shape()
                         #else:
                             #wanted_size = encoder_outputs[corresponding_encoder_l-1].get_shape()
-                        logits = decoder_layers[l](decoder_input)
 
                         wanted_t_size = wanted_size_tensor[1]
                         wanted_f_size = wanted_size_tensor[2]
+			freq_out = wanted_size[2]
 
-                        #get actual output size
-                        output_size = tf.shape(logits)
-                        #output_size = logits.get_shape()
-                        output_t_size = output_size[1]
-                        output_f_size = output_size[2]
+                        logits = decoder_layers[l](decoder_input, wanted_t_size, freq_out)
+                       # #get actual output size
+                       # output_size = tf.shape(logits)
+                       # #output_size = logits.get_shape()
+                       # output_t_size = output_size[1]
+                       # output_f_size = output_size[2]
 
-                        #compensate for potential mismatch, by adding duplicates
-                        missing_t_size = wanted_t_size-output_t_size
-                        missing_f_size = wanted_f_size-output_f_size
+                       # #compensate for potential mismatch, by adding duplicates
+                       # missing_t_size = wanted_t_size-output_t_size
+                       # missing_f_size = wanted_f_size-output_f_size
 
-                        def t_tiling(logits_to_tile):
-                            last_t_slice = tf.expand_dims(logits_to_tile[:, -1, :, :, :], 1)
-                            duplicate_logits = tf.tile(last_t_slice, [1, missing_t_size, 1, 1, 1])
-                            tiled_logits = tf.concat([logits_to_tile, duplicate_logits], 1)
-                            return tiled_logits
+                       # def t_tiling(logits_to_tile):
+                       #     last_t_slice = tf.expand_dims(logits_to_tile[:, -1, :, :, :], 1)
+                       #     duplicate_logits = tf.tile(last_t_slice, [1, missing_t_size, 1, 1, 1])
+                       #     tiled_logits = tf.concat([logits_to_tile, duplicate_logits], 1)
+                       #     return tiled_logits
 
-                        def f_tiling(logits_to_tile):
-                            last_f_slice = tf.expand_dims(logits_to_tile[:, :, -1, :, :], 2)
-                            duplicate_logits = tf.tile(last_f_slice, [1, 1, missing_f_size, 1, 1])
-                            tiled_logits = tf.concat([logits_to_tile, duplicate_logits], 2)
-                            return tiled_logits
+                       # def f_tiling(logits_to_tile):
+                       #     last_f_slice = tf.expand_dims(logits_to_tile[:, :, -1, :, :], 2)
+                       #     duplicate_logits = tf.tile(last_f_slice, [1, 1, missing_f_size, 1, 1])
+                       #     tiled_logits = tf.concat([logits_to_tile, duplicate_logits], 2)
+                       #     return tiled_logits
 
 
-                        logits = tf.cond(missing_t_size > 0, lambda: t_tiling(logits),
-                                         lambda: tf.slice(logits, [0,0,0,0,0], [-1, wanted_t_size, -1, -1, -1]))
-                        logits = tf.cond(missing_f_size > 0, lambda: f_tiling(logits),
-                                         lambda: tf.slice(logits, [0, 0, 0, 0, 0], [-1, -1, wanted_f_size, -1, -1]))
-                        logits.set_shape(wanted_size)
+                       # logits = tf.cond(missing_t_size > 0, lambda: t_tiling(logits),
+                       #                  lambda: tf.slice(logits, [0,0,0,0,0], [-1, wanted_t_size, -1, -1, -1]))
+                       # logits = tf.cond(missing_f_size > 0, lambda: f_tiling(logits),
+                       #                  lambda: tf.slice(logits, [0, 0, 0, 0, 0], [-1, -1, wanted_f_size, -1, -1]))
+                       # logits.set_shape(wanted_size)
 
                 output = logits
                 # Include frequency dimension
