@@ -167,8 +167,8 @@ class EncDecCapsNet(model.Model):
                     with tf.variable_scope('layer_%s'%l):
                         corresponding_encoder_l = num_encoder_layers-1-l
                         corresponding_encoder_output = encoder_outputs[corresponding_encoder_l]
-                        # decoder_input = tf.concat([logits, corresponding_encoder_output], -2)
-                        decoder_input = logits
+                        decoder_input = tf.concat([logits, corresponding_encoder_output], -2)
+                        # decoder_input = logits
 
 
                         if is_training and float(self.conf['dropout']) < 1:
