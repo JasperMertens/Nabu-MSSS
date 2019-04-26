@@ -52,7 +52,8 @@ class EncoderDecoderCNN(model.Model):
 		# the encoder layers
 		encoder_layers = []
 		for l in range(num_encoder_layers):
-			num_filters_l = num_filters_1st_layer * 2**(l+1)
+			# num_filters_l = num_filters_1st_layer * 2**(l+1)
+			num_filters_l = num_filters_1st_layer
 
 			max_pool_filter = [1, 1]
 			if np.mod(l, t_pool_rate) == 0:
@@ -71,7 +72,8 @@ class EncoderDecoderCNN(model.Model):
 		# the centre layers
 		centre_layers = []
 		for l in range(num_centre_layers):
-			num_filters_l = num_filters_1st_layer * 2**(num_encoder_layers)
+			# num_filters_l = num_filters_1st_layer * 2**num_encoder_layers
+			num_filters_l = num_filters_1st_layer
 
 			centre_layers.append(layer.Conv2D(num_filters=num_filters_l,
 											  kernel_size=kernel_size,
@@ -86,7 +88,7 @@ class EncoderDecoderCNN(model.Model):
 		for l in range(num_encoder_layers):
 			corresponding_encoder_l = num_encoder_layers-1-l
 			if corresponding_encoder_l == 0:
-				num_filters_l = num_filters_1st_layer
+				num_filters_l = num_filters_1st_layer/2
 			else:
 				num_filters_l = encoder_layers[corresponding_encoder_l-1].num_filters
 			strides = encoder_layers[corresponding_encoder_l].max_pool_filter
@@ -150,7 +152,10 @@ class EncoderDecoderCNN(model.Model):
 					with tf.variable_scope('layer_%s'%l):
 						corresponding_encoder_l = num_encoder_layers-1-l
 						corresponding_encoder_output = encoder_outputs[corresponding_encoder_l]
-						decoder_input = tf.concat([logits, corresponding_encoder_output], -1)
+						if l == 0:
+							decoder_input = logits
+						else:
+							decoder_input = tf.concat([logits, corresponding_encoder_output], -1)
 						logits = decoder_layers[l](decoder_input)
 
 						if is_training and float(self.conf['dropout']) < 1:
