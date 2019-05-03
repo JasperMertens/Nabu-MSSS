@@ -1,16 +1,18 @@
 # Normal execution
 Universe         = vanilla
 # need enough RAM to store the parameters
-# RequestMemory    = 15G
-RequestMemory    = 63G
+RequestMemory    = 20G
+#RequestMemory    = 63G
 requestCpus      = 8
-#request a week of wall time
-+RequestWalltime = 604800
+#request two days of wall time
++RequestWalltime = 172800
 #specify that the cuda capability should be at least 3.0 and set the memory
 #requirement
 #Requirements = (CUDACapability >= 3.0)
 Requirements =  has_avx\
   && (machine =!= LastRemoteHost)\
+  && (machine != "topaz.esat.kuleuven.be")\
+  && (machine != "slot1@emerald.esat.kuleuven.be")\
   && (machine != "spchcl21.esat.kuleuven.be")\
   && (machine != "spchcl23.esat.kuleuven.be")\
   && (machine != "spchcl24.esat.kuleuven.be")\

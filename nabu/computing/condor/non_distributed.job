@@ -30,6 +30,7 @@ Requirements = (CUDACapability >= 3.0)\
 # machines below should be re-added \
 #  && (machine != "andromeda.esat.kuleuven.be") \
 # machines below produce error\\
+  && (machine != "slot1@emerald.esat.kuleuven.be")\
    && (machine != "askoy.esat.kuleuven.be")\
    && (machine != "spchcl23.esat.kuleuven.be")\
    && (machine != "slot1@beryl.esat.kuleuven.be")\

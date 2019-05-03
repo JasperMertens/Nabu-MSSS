@@ -7,7 +7,7 @@ from nabu.neuralnetworks.components import layer, ops
 import numpy as np
 import pdb
 
-class EncDecCapsNet(model.Model):
+class EncDecCapsNetXL(model.Model):
     '''A CNN classifier with encoder-decoder shape 
     (https://github.com/tensorflow/models/blob/master/samples/outreach/blogs/segmentation_blogpost/image_segmentation.ipynb)
     '''
@@ -103,8 +103,8 @@ class EncDecCapsNet(model.Model):
                     tf.shape(inputs),
                     stddev=float(self.conf['input_noise']))
 
-            # Primary capsule
-            with tf.variable_scope('primary_capsule'):
+            # First layer
+            with tf.variable_scope('first_layer'):
                 logits = tf.identity(inputs, 'inputs')
                 input_seq_length = tf.identity(input_seq_length, 'input_seq_length')
 
@@ -113,6 +113,21 @@ class EncDecCapsNet(model.Model):
                 num_freq = logits.shape[2].value
                 output_dim = num_capsules_lst[0] * capsule_dim_lst[0]
                 logits = tf.expand_dims(logits, -1)
+
+                first_layer = tf.layers.conv2d(
+                    logits,
+                    output_dim,
+                    kernel_size,
+                    strides=(1, 1),
+                    padding='SAME',
+                    activation=tf.nn.relu
+                )
+
+                # tf.add_to_collection('image', tf.expand_dims(prim_norm, 3))
+                logits = tf.identity(first_layer, 'first_layer')
+
+            # Primary capsule
+            with tf.variable_scope('primary_capsule'):
 
                 primary_capsules = tf.layers.conv2d(
                     logits,
