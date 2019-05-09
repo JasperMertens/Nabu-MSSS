@@ -12,18 +12,41 @@ def unit_activation(x, name=None):
   with ops.name_scope(name, "unit_activation", [x]) as name:
     x = ops.convert_to_tensor(x, name="x")
     return tf.ones(tf.shape(x))
-  
-def squash(s, axis=-1, epsilon=1e-7, name=None):
-    '''squash function'''
-    with tf.name_scope(name, default_name="squash"):
-        squared_norm = tf.reduce_sum(tf.square(s), axis=axis,
-                                     keepdims=True)
-        sn = tf.sqrt(squared_norm + epsilon)
-        squash_factor = squared_norm / (1. + squared_norm)
-        squash_factor /= sn
 
-        return squash_factor * s
-      
+def squash(s, axis=-1, epsilon=1e-7, name=None):
+	'''squash function'''
+	with tf.name_scope(name, default_name="squash"):
+		squared_norm = tf.reduce_sum(tf.square(s), axis=axis,
+									 keepdims=True)
+		sn = tf.sqrt(squared_norm + epsilon)
+		squash_factor = squared_norm / (1. + squared_norm)
+		squash_factor /= sn
+
+		return squash_factor * s
+
+def leaky_softmax(logits):
+	# From "Dynamic Routing between Capsules" by Sara Sabour, Nickolas Frosst, Geoffrey E. Hinton
+	# https://github.com/Sarasra/models/blob/master/research/capsules/models/layers/layers.py
+	"""Adds extra dimmension to routing logits.
+	This enables active capsules to be routed to the extra dim if they are not a
+	good fit for any of the capsules in layer above.
+	Args:
+	  logits: The original logits. shape is
+		[input_capsule_num, output_capsule_num] if fully connected. Otherwise, it
+		has two more dimmensions.
+	Returns:
+	  Routing probabilities for each pair of capsules. Same shape as logits.
+	"""
+
+	# leak is a zero matrix with same shape as logits except dim(2) = 1 because
+	# of the reduce_sum.
+	output_dim = logits.shape[-1].value
+	leak = tf.zeros_like(logits, optimize=True)
+	leak = tf.reduce_sum(leak, axis=-1, keep_dims=True)
+	leaky_logits = tf.concat([leak, logits], axis=-1)
+	leaky_routing = tf.nn.softmax(leaky_logits, dim=-1)
+	return tf.split(leaky_routing, [1, output_dim], -1)[1]
+
 def safe_norm(s, axis=-1, keepdims=False, epsilon=1e-7, name=None):
     '''compute a safe norm'''
 

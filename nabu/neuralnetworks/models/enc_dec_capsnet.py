@@ -38,6 +38,11 @@ class EncDecCapsNet(model.Model):
         num_centre_layers = int(self.conf['num_centre_layers'])
         num_capsules_lst = map(int, self.conf['num_capsules_lst'].split(' '))
         capsule_dim_lst = map(int, self.conf['capsule_dim_lst'].split(' '))
+        use_bias = self.conf['use_bias'] == 'True'
+        leaky_softmax = self.conf['leaky_softmax'] == 'True'
+        probability_fn = None
+        if leaky_softmax:
+            probability_fn = ops.leaky_softmax
 
         # the encoder layers
         encoder_layers = []
@@ -56,7 +61,9 @@ class EncDecCapsNet(model.Model):
                                                       kernel_size=kernel_size,
                                                       strides=strides,
                                                       padding='SAME',
-                                                      routing_iters=routing_iters))
+                                                      routing_iters=routing_iters,
+                                                      use_bias=use_bias,
+                                                      probability_fn=probability_fn))
 
         # the centre layers
         centre_layers = []
@@ -70,7 +77,9 @@ class EncDecCapsNet(model.Model):
                                                      kernel_size=kernel_size,
                                                      strides=(1,1),
                                                      padding='SAME',
-                                                     routing_iters=routing_iters))
+                                                     routing_iters=routing_iters,
+                                                     use_bias=use_bias,
+                                                     probability_fn=probability_fn))
 
         # the decoder layers
         decoder_layers = []
@@ -89,7 +98,9 @@ class EncDecCapsNet(model.Model):
                                                       strides=strides,
                                                       padding='SAME',
                                                       transpose=True,
-                                                      routing_iters=routing_iters))
+                                                      routing_iters=routing_iters,
+                                                      use_bias=use_bias,
+                                                      probability_fn=probability_fn))
 
         #code not available for multiple inputs!!
         if len(inputs) > 1:
