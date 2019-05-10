@@ -2164,6 +2164,9 @@ class EncDecCapsule(tf.layers.Layer):
                     w = self.probability_fn(l)
                     caps = tf.reduce_sum(
                         tf.expand_dims(w, -1)*predictions, -3)
+                    caps = tf.cond(tf.cast(self.use_bias, 'bool'),
+                                   lambda: caps + bias,
+                                   lambda: caps)
 
                 return caps, w
 
@@ -2172,10 +2175,6 @@ class EncDecCapsule(tf.layers.Layer):
                 '''body'''
 
                 caps, _ = m_step(l)
-                caps = tf.cond(tf.cast(self.use_bias, 'bool'),
-                    lambda: caps + bias,
-                    lambda: caps)
-
                 caps = self.activation_fn(caps)
 
                 #compare the capsule contents with the predictions
@@ -3241,5 +3240,108 @@ class Conv2D(object):
 		outputs = tf.layers.max_pooling2d(outputs, self.max_pool_filter, 
 				   strides=self.max_pool_filter, padding='valid')
 		
+
+            return outputs
+
+
+class EncDecCNN(tf.layers.Layer):
+    '''a Conv2D layer, with max_pool and layer norm options'''
+
+    def __init__(self, num_filters, kernel_size, strides=(1, 1), padding='same',
+                 activation_fn=tf.nn.relu, layer_norm=False, max_pool_filter=(1, 1),
+                 transpose=False, activity_regularizer=None, kernel_initializer=None,
+                 trainable=True, name=None, **kwargs):
+
+
+        self.num_filters = num_filters
+        self.kernel_size = kernel_size
+        self.strides = [1, strides[0], strides[1], 1]
+        self.padding = padding
+        self.activation_fn = activation_fn
+        self.layer_norm = layer_norm
+        self.max_pool_filter = max_pool_filter
+        self.transpose = transpose
+        self.kernel_initializer = kernel_initializer
+
+        super(EncDecCNN, self).__init__(
+            trainable=trainable,
+            name=name,
+            activity_regularizer=activity_regularizer,
+            **kwargs)
+
+    def build(self, input_shape):
+        '''creates the variables of this layer
+        args:
+            input_shape: the shape of the input
+        '''
+
+        # pylint: disable=W0201
+
+        # input dimensions
+        num_channels_in  = input_shape[-1].value
+
+        if self.transpose:
+            self.conv_weights = self.add_variable(
+                        name='conv_trans_weights',
+                        dtype=self.dtype,
+                        shape=[self.kernel_size[0], self.kernel_size[1],
+                               self.num_filters, num_channels_in],
+                        initializer=self.kernel_initializer)
+        else:
+            self.conv_weights = self.add_variable(
+                    name='conv_weights',
+                    dtype=self.dtype,
+                    shape=[self.kernel_size[0], self.kernel_size[1],
+                           num_channels_in, self.num_filters],
+                    initializer=self.kernel_initializer)
+
+        self.bias = self.add_variable(
+        name='bias',
+        dtype=self.dtype,
+        shape=[self.num_filters],
+        initializer=None)
+
+        super(EncDecCNN, self).build(input_shape)
+
+
+    def call(self, inputs, t_out_tensor=None, freq_out=None, scope=None):
+        '''
+        Create the variables and do the forward computation
+
+        Args:
+            inputs: the input to the layer as a
+                [batch_size, max_length, dim, in_channel] tensor
+            scope: The variable scope sets the namespace under which
+                the variables created during this call will be stored.
+
+        Returns:
+            the output of the layer
+        '''
+
+        with tf.variable_scope(scope or type(self).__name__):
+            batch_size = inputs.shape[0].value
+            num_freq_in = inputs.shape[2].value
+            if not self.transpose:
+                freq_out = int(np.ceil(float(num_freq_in) / float(self.strides[1])))
+
+            if not self.transpose:
+                conv = tf.nn.conv2d(
+                    inputs,
+                    filter=self.conv_weights,
+                    strides=self.strides,
+                    padding=self.padding)
+            else:
+                conv = tf.nn.conv2d_transpose(
+                    inputs,
+                    filter=self.conv_weights,
+                    output_shape=[batch_size, t_out_tensor, freq_out,
+                                  self.num_filters],
+                    strides=self.strides,
+                    padding=self.padding)
+            outputs = self.activation_fn(conv + self.bias)
+
+            if self.max_pool_filter != (1, 1):
+                outputs = tf.layers.max_pooling2d(outputs, self.max_pool_filter,
+                                                  strides=self.max_pool_filter, padding='valid')
 
             return outputs

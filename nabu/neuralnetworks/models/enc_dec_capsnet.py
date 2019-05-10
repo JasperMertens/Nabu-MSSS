@@ -39,7 +39,8 @@ class EncDecCapsNet(model.Model):
         num_capsules_lst = map(int, self.conf['num_capsules_lst'].split(' '))
         capsule_dim_lst = map(int, self.conf['capsule_dim_lst'].split(' '))
         use_bias = self.conf['use_bias'] == 'True'
-        leaky_softmax = self.conf['leaky_softmax'] == 'True'
+        # leaky_softmax = self.conf['leaky_softmax'] == 'True'
+        leaky_softmax = False
         probability_fn = None
         if leaky_softmax:
             probability_fn = ops.leaky_softmax
