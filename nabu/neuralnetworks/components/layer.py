@@ -2449,36 +2449,32 @@ class LSTMLayer(object):
             return outputs
 
 class BLSTMLayer(object):
-    '''a BLSTM layer'''
+    """a BLSTM layer"""
 
     def __init__(self, num_units, layer_norm=False, recurrent_dropout=1.0, activation_fn=tf.nn.tanh,
-		 separate_directions=False, fast_version=False):
-        '''
+                 separate_directions=False, linear_out_flag=False, fast_version=False):
+        """
         BLSTMLayer constructor
-
         Args:
             num_units: The number of units in the one directon
             layer_norm: whether layer normalization should be applied
             recurrent_dropout: the recurrent dropout keep probability
             separate_directions: wether the forward and backward directions should
             be separated for deep networks.
-            fast_version: wheter a fast version of the LSTM cell should be used. Not compatible 
-            with layer normalization or recurrent_dropout.
-        '''
+            fast_version: deprecated
+        """
 
         self.num_units = num_units
         self.layer_norm = layer_norm
         self.recurrent_dropout = recurrent_dropout
         self.activation_fn = activation_fn
         self.separate_directions = separate_directions
+        self.linear_out_flag = linear_out_flag
         self.fast_version = fast_version
-        if self.fast_version and (self.recurrent_dropout<1.0 or self.layer_norm):
-	    raise 'Fast version of lstm cell is not compatible with layer normalization or recurrent_dropout'
 
     def __call__(self, inputs, sequence_length, scope=None):
-        '''
+        """
         Create the variables and do the forward computation
-
         Args:
             inputs: the input to the layer as a
                 [batch_size, max_length, dim] tensor
@@ -2486,66 +2482,45 @@ class BLSTMLayer(object):
                 [batch_size] tensor
             scope: The variable scope sets the namespace under which
                 the variables created during this call will be stored.
-
         Returns:
             the output of the layer
-        '''
+        """
 
         with tf.variable_scope(scope or type(self).__name__):
 
-            #create the lstm cell that will be used for the forward and backward
-            #pass
-            #if self.fast_version:
-		## make input time major
-		#inputs = tf.transpose(inputs, [1, 0] + range(2,len(inputs.get_shape())))
+            # create the lstm cell that will be used for the forward and backward
+            # pass
 
-		#forward_rnn = tf.contrib.rnn.LSTMBlockFusedCell(
-		    #num_units=self.num_units,
-		    #reuse=tf.get_variable_scope().reuse)
-		#backward_rnn = tf.contrib.rnn.LSTMBlockFusedCell(
-		    #num_units=self.num_units,
-		    #reuse=tf.get_variable_scope().reuse)
-		
-		#forward_output, _ = forward_rnn(inputs, dtype=tf.float32,
-		    #sequence_length=sequence_length)
-		#reverse_input=array_ops.reverse_sequence(
-		    #input=inputs, seq_lengths=sequence_length,
-		    #seq_dim=0, batch_dim=1)
-		#backward_output, _ = forward_rnn(reverse_input, dtype=tf.float32,
-		    #sequence_length=sequence_length)
-		#reverse_backward_output=array_ops.reverse_sequence(
-		    #input=backward_output, seq_lengths=sequence_length,
-		    #seq_dim=0, batch_dim=1)
-		
-		#outputs = tf.concat((forward_output, backward_output), 2)
-		#outputs = tf.transpose(outputs, [1, 0] + range(2,len(outputs.get_shape())))
-	    #else:
-            lstm_cell_fw = tf.contrib.rnn.LayerNormBasicLSTMCell(
-                num_units=self.num_units,
-                activation=self.activation_fn,
-                layer_norm=self.layer_norm,
-                dropout_keep_prob=self.recurrent_dropout,
-                reuse=tf.get_variable_scope().reuse)
-            lstm_cell_bw = tf.contrib.rnn.LayerNormBasicLSTMCell(
-                num_units=self.num_units,
-                activation=self.activation_fn,
-                layer_norm=self.layer_norm,
-                dropout_keep_prob=self.recurrent_dropout,
-                reuse=tf.get_variable_scope().reuse)
-                	    
-            #do the forward computation
-            if not self.separate_directions:
-		outputs_tupple, _ = bidirectional_dynamic_rnn(
-		    lstm_cell_fw, lstm_cell_bw, inputs, dtype=tf.float32,
-		    sequence_length=sequence_length)
-
-		outputs = tf.concat(outputs_tupple, 2)
+            if self.linear_out_flag:
+                lstm_cell_type = rnn_cell.LayerNormBasicLSTMCellLineairOut
             else:
-		outputs, _ = rnn.bidirectional_dynamic_rnn_2inputs(
-		    lstm_cell_fw, lstm_cell_bw, inputs[0], inputs[1], dtype=tf.float32,
-		    sequence_length=sequence_length)
+                lstm_cell_type = tf.contrib.rnn.LayerNormBasicLSTMCell
 
-            return outputs
+            lstm_cell_fw = lstm_cell_type(
+                num_units=self.num_units,
+                activation=self.activation_fn,
+                layer_norm=self.layer_norm,
+                dropout_keep_prob=self.recurrent_dropout,
+                reuse=tf.get_variable_scope().reuse)
+            lstm_cell_bw =lstm_cell_type(
+                num_units=self.num_units,
+                activation=self.activation_fn,
+                layer_norm=self.layer_norm,
+                dropout_keep_prob=self.recurrent_dropout,
+                reuse=tf.get_variable_scope().reuse)
+
+            # do the forward computation
+            if not self.separate_directions:
+                outputs_tupple, _ = bidirectional_dynamic_rnn(lstm_cell_fw, lstm_cell_bw, inputs, dtype=tf.float32,
+                                                              sequence_length=sequence_length)
+
+                outputs = tf.concat(outputs_tupple, 2)
+            else:
+                outputs, _ = rnn.bidirectional_dynamic_rnn_2inputs(
+                    lstm_cell_fw, lstm_cell_bw, inputs[0], inputs[1], dtype=tf.float32,
+                    sequence_length=sequence_length)
+
+        return outputs
 
 
 class LeakyLSTMLayer(object):
