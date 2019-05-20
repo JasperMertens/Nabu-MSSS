@@ -34,6 +34,7 @@ class SegCapsNet(model.Model):
         '''
         use_bias = self.conf['use_bias'] == 'True'
         leaky_softmax = self.conf['leaky_softmax'] == 'True'
+        shared = self.conf['shared'] == 'True'
         probability_fn = None
         if leaky_softmax:
             probability_fn = ops.leaky_softmax
@@ -67,46 +68,46 @@ class SegCapsNet(model.Model):
 
             # Layer 1: Primary Capsule: Conv cap with routing 1
             primary_caps = layer.EncDecCapsule(kernel_size=(5,5), num_capsules=2, capsule_dim=16, strides=(2,2), padding='SAME',
-                                            routing_iters=0, use_bias=True, name='primarycaps')(conv1_reshaped)
+                                            routing_iters=0, use_bias=use_bias, shared=shared, name='primarycaps')(conv1_reshaped)
 
             # Layer 2: Convolutional Capsule
             conv_cap_2_1 = layer.EncDecCapsule(kernel_size=(5,5), num_capsules=4, capsule_dim=16, strides=(1,1), padding='SAME',
-                                               routing_iters=3, use_bias=True, name='conv_cap_2_1')(primary_caps)
+                                               routing_iters=3, use_bias=use_bias, shared=shared, name='conv_cap_2_1')(primary_caps)
 
             # Layer 2: Convolutional Capsule
             conv_cap_2_2 = layer.EncDecCapsule(kernel_size=(5,5), num_capsules=4, capsule_dim=32, strides=(2,2), padding='SAME',
-                                               routing_iters=3, use_bias=True, name='conv_cap_2_2')(conv_cap_2_1)
+                                               routing_iters=3, use_bias=use_bias, shared=shared, name='conv_cap_2_2')(conv_cap_2_1)
 
             # Layer 3: Convolutional Capsule
             conv_cap_3_1 = layer.EncDecCapsule(kernel_size=(5,5), num_capsules=8, capsule_dim=32, strides=(1,1), padding='SAME',
-                                               routing_iters=3, use_bias=True, name='conv_cap_3_1')(conv_cap_2_2)
+                                               routing_iters=3, use_bias=use_bias, shared=shared, name='conv_cap_3_1')(conv_cap_2_2)
 
             # Layer 3: Convolutional Capsule
             conv_cap_3_2 = layer.EncDecCapsule(kernel_size=(5,5), num_capsules=8, capsule_dim=64, strides=(2,2), padding='SAME',
-                                               routing_iters=3, use_bias=True, name='conv_cap_3_2')(conv_cap_3_1)
+                                               routing_iters=3, use_bias=use_bias, shared=shared, name='conv_cap_3_2')(conv_cap_3_1)
 
             # Layer 4: Convolutional Capsule
             conv_cap_4_1 = layer.EncDecCapsule(kernel_size=(5,5), num_capsules=8, capsule_dim=32, strides=(1,1), padding='SAME',
-                                               routing_iters=3, use_bias=True, name='conv_cap_4_1')(conv_cap_3_2)
+                                               routing_iters=3, use_bias=use_bias, shared=shared, name='conv_cap_4_1')(conv_cap_3_2)
 
             # Layer 1 Up: Deconvolutional Capsule
             t_out = tf.shape(conv_cap_3_1)[1]
             freq_out = conv_cap_3_1.shape[2]
             deconv_cap_1_1 = layer.EncDecCapsule(kernel_size=(4,4), num_capsules=8, capsule_dim=32, transpose=True,
-                                                 strides=(2, 2), padding='SAME', routing_iters=3, use_bias=True,
+                                                 strides=(2, 2), padding='SAME', routing_iters=3, use_bias=use_bias, shared=shared,
                                                 name='deconv_cap_1_1')(conv_cap_4_1, t_out, freq_out)
             # Skip connection
             up_1 = tf.concat([deconv_cap_1_1, conv_cap_3_1], axis=-2, name='up_1')
 
             # Layer 1 Up: Deconvolutional Capsule
             deconv_cap_1_2 = layer.EncDecCapsule(kernel_size=(5,5), num_capsules=4, capsule_dim=32, strides=(1,1),
-                                              padding='SAME', routing_iters=3, use_bias=True, name='deconv_cap_1_2')(up_1)
+                                              padding='SAME', routing_iters=3, use_bias=use_bias, shared=shared, name='deconv_cap_1_2')(up_1)
 
             # Layer 2 Up: Deconvolutional Capsule
             t_out = tf.shape(conv_cap_2_1)[1]
             freq_out = conv_cap_2_1.shape[2]
             deconv_cap_2_1 = layer.EncDecCapsule(kernel_size=(4,4), num_capsules=4, capsule_dim=16, transpose=True,
-                                                 strides=(2, 2), padding='SAME', routing_iters=3, use_bias=True,
+                                                 strides=(2, 2), padding='SAME', routing_iters=3, use_bias=use_bias, shared=shared,
                                                 name='deconv_cap_2_1')(deconv_cap_1_2, t_out, freq_out)
 
             # Skip connection
@@ -114,13 +115,13 @@ class SegCapsNet(model.Model):
 
             # Layer 2 Up: Deconvolutional Capsule
             deconv_cap_2_2 = layer.EncDecCapsule(kernel_size=(5,5), num_capsules=4, capsule_dim=16, strides=(1,1),
-                                              padding='SAME', routing_iters=3, use_bias=True, name='deconv_cap_2_2')(up_2)
+                                              padding='SAME', routing_iters=3, use_bias=use_bias, shared=shared, name='deconv_cap_2_2')(up_2)
 
             # Layer 3 Up: Deconvolutional Capsule
             t_out = tf.shape(conv1_reshaped)[1]
             freq_out = conv1_reshaped.shape[2]
             deconv_cap_3_1 = layer.EncDecCapsule(kernel_size=(4,4), num_capsules=2, capsule_dim=16, transpose=True,
-                                                 strides=(2, 2), padding='SAME', routing_iters=3, use_bias=True,
+                                                 strides=(2, 2), padding='SAME', routing_iters=3, use_bias=use_bias, shared=shared,
                                                 name='deconv_cap_3_1')(deconv_cap_2_2, t_out, freq_out)
 
             # Skip connection
@@ -128,7 +129,7 @@ class SegCapsNet(model.Model):
 
             # Layer 4: Convolutional Capsule: 1x1
             seg_caps = layer.EncDecCapsule(kernel_size=(1,1), num_capsules=1, capsule_dim=16, strides=(1,1), padding='SAME',
-                                           routing_iters=3, use_bias=True, name='seg_caps')(up_3)
+                                           routing_iters=3, use_bias=use_bias, shared=shared, name='seg_caps')(up_3)
 
 
             output = seg_caps

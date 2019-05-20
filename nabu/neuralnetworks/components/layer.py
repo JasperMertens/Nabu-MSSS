@@ -1888,6 +1888,7 @@ class EncDecCapsule(tf.layers.Layer):
             transpose=False,
             routing_iters=3,
             use_bias=False,
+            shared=True,
             activation_fn=None,
             probability_fn=None,
             activity_regularizer=None,
@@ -1930,6 +1931,7 @@ class EncDecCapsule(tf.layers.Layer):
         self.logits_initializer = logits_initializer or tf.zeros_initializer()
         self.routing_iters = routing_iters
         self.use_bias = use_bias
+        self.sharing_weights = shared
         self.activation_fn = activation_fn or ops.squash
         self.probability_fn = probability_fn or tf.nn.softmax
 
@@ -1956,18 +1958,28 @@ class EncDecCapsule(tf.layers.Layer):
             raise ValueError('input capsules dimension must be defined')
 
         if self.transpose:
+            if self.sharing_weights:
+                weights_shape = [self.kernel_size[0], self.kernel_size[1],
+                               self.num_capsules * self.capsule_dim, capsule_dim_in]
+            else:
+                weights_shape = [num_capsules_in, self.kernel_size[0], self.kernel_size[1],
+                                 self.num_capsules * self.capsule_dim, capsule_dim_in]
             self.conv_weights = self.add_variable(
                         name='conv_trans_weights',
                         dtype=self.dtype,
-                        shape=[num_capsules_in, self.kernel_size[0], self.kernel_size[1],
-                               self.num_capsules * self.capsule_dim, capsule_dim_in],
+                        shape=weights_shape,
                         initializer=self.kernel_initializer)
         else:
+            if self.sharing_weights:
+                weights_shape = [self.kernel_size[0], self.kernel_size[1],
+                                 capsule_dim_in, self.num_capsules * self.capsule_dim]
+            else:
+                weights_shape = [num_capsules_in, self.kernel_size[0], self.kernel_size[1],
+                           capsule_dim_in, self.num_capsules * self.capsule_dim]
             self.conv_weights = self.add_variable(
                     name='conv_weights',
                     dtype=self.dtype,
-                    shape=[num_capsules_in, self.kernel_size[0], self.kernel_size[1],
-                           capsule_dim_in, self.num_capsules * self.capsule_dim],
+                    shape=weights_shape,
                     initializer=self.kernel_initializer)
 
         self.logits = self.add_variable(
@@ -2035,14 +2047,18 @@ class EncDecCapsule(tf.layers.Layer):
         for i in range(0, num_capsule_in):
             with tf.name_scope('conv_2d%d' % i):
                 slice = inputs[:, :, :, i, :]
+                if self.sharing_weights:
+                    conv_weights = self.conv_weights
+                else:
+                    conv_weights = self.conv_weights[i,:,:,:,:]
                 if self.transpose:
-                    conv = tf.nn.conv2d_transpose(slice, self.conv_weights[i,:,:,:,:],
+                    conv = tf.nn.conv2d_transpose(slice, conv_weights,
                                                   output_shape=[batch_size, t_out_tensor, freq_out,
                                                                 self.capsule_dim * self.num_capsules],
                                                   strides=[1, self.strides[0], self.strides[1], 1],
                                                   padding=self.padding)
                 else:
-                    conv = tf.nn.conv2d(slice, self.conv_weights[i,:,:,:,:],
+                    conv = tf.nn.conv2d(slice, conv_weights,
                                         strides=[1, self.strides[0], self.strides[1], 1],
                                         padding=self.padding)
             expanded = tf.expand_dims(conv, 3)
