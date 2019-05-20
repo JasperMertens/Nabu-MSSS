@@ -67,7 +67,7 @@ class SegCapsNet(model.Model):
             conv1_reshaped = tf.reshape(conv1, [batch_size, -1, num_freq, 1, 16])
 
             # Layer 1: Primary Capsule: Conv cap with routing 1
-            primary_caps = layer.EncDecCapsule(kernel_size=(5,5), num_capsules=2, capsule_dim=16, strides=(2,2), padding='SAME',
+            primary_caps = layer.EncDecCapsule(kernel_size=(7,7), num_capsules=2, capsule_dim=16, strides=(2,2), padding='SAME',
                                             routing_iters=0, use_bias=use_bias, shared=shared, name='primarycaps')(conv1_reshaped)
 
             # Layer 2: Convolutional Capsule
@@ -75,7 +75,7 @@ class SegCapsNet(model.Model):
                                                routing_iters=3, use_bias=use_bias, shared=shared, name='conv_cap_2_1')(primary_caps)
 
             # Layer 2: Convolutional Capsule
-            conv_cap_2_2 = layer.EncDecCapsule(kernel_size=(5,5), num_capsules=4, capsule_dim=32, strides=(2,2), padding='SAME',
+            conv_cap_2_2 = layer.EncDecCapsule(kernel_size=(7,7), num_capsules=4, capsule_dim=32, strides=(2,2), padding='SAME',
                                                routing_iters=3, use_bias=use_bias, shared=shared, name='conv_cap_2_2')(conv_cap_2_1)
 
             # Layer 3: Convolutional Capsule
@@ -83,7 +83,7 @@ class SegCapsNet(model.Model):
                                                routing_iters=3, use_bias=use_bias, shared=shared, name='conv_cap_3_1')(conv_cap_2_2)
 
             # Layer 3: Convolutional Capsule
-            conv_cap_3_2 = layer.EncDecCapsule(kernel_size=(5,5), num_capsules=8, capsule_dim=64, strides=(2,2), padding='SAME',
+            conv_cap_3_2 = layer.EncDecCapsule(kernel_size=(7,7), num_capsules=8, capsule_dim=64, strides=(2,2), padding='SAME',
                                                routing_iters=3, use_bias=use_bias, shared=shared, name='conv_cap_3_2')(conv_cap_3_1)
 
             # Layer 4: Convolutional Capsule
@@ -93,7 +93,7 @@ class SegCapsNet(model.Model):
             # Layer 1 Up: Deconvolutional Capsule
             t_out = tf.shape(conv_cap_3_1)[1]
             freq_out = conv_cap_3_1.shape[2]
-            deconv_cap_1_1 = layer.EncDecCapsule(kernel_size=(4,4), num_capsules=8, capsule_dim=32, transpose=True,
+            deconv_cap_1_1 = layer.EncDecCapsule(kernel_size=(6,6), num_capsules=8, capsule_dim=32, transpose=True,
                                                  strides=(2, 2), padding='SAME', routing_iters=3, use_bias=use_bias, shared=shared,
                                                 name='deconv_cap_1_1')(conv_cap_4_1, t_out, freq_out)
             # Skip connection
@@ -106,7 +106,7 @@ class SegCapsNet(model.Model):
             # Layer 2 Up: Deconvolutional Capsule
             t_out = tf.shape(conv_cap_2_1)[1]
             freq_out = conv_cap_2_1.shape[2]
-            deconv_cap_2_1 = layer.EncDecCapsule(kernel_size=(4,4), num_capsules=4, capsule_dim=16, transpose=True,
+            deconv_cap_2_1 = layer.EncDecCapsule(kernel_size=(6,6), num_capsules=4, capsule_dim=16, transpose=True,
                                                  strides=(2, 2), padding='SAME', routing_iters=3, use_bias=use_bias, shared=shared,
                                                 name='deconv_cap_2_1')(deconv_cap_1_2, t_out, freq_out)
 
@@ -120,7 +120,7 @@ class SegCapsNet(model.Model):
             # Layer 3 Up: Deconvolutional Capsule
             t_out = tf.shape(conv1_reshaped)[1]
             freq_out = conv1_reshaped.shape[2]
-            deconv_cap_3_1 = layer.EncDecCapsule(kernel_size=(4,4), num_capsules=2, capsule_dim=16, transpose=True,
+            deconv_cap_3_1 = layer.EncDecCapsule(kernel_size=(6,6), num_capsules=2, capsule_dim=16, transpose=True,
                                                  strides=(2, 2), padding='SAME', routing_iters=3, use_bias=use_bias, shared=shared,
                                                 name='deconv_cap_3_1')(deconv_cap_2_2, t_out, freq_out)
 
