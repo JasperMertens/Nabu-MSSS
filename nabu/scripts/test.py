@@ -60,7 +60,7 @@ def test(expdir):
     for task in tasks:
       
 	rec_dir = os.path.join(expdir,'reconstructions',task)
-	
+
 	#load the model
 	with open(os.path.join(expdir, 'model', 'model.pkl'), 'rb') as fid:
 	    models = pickle.load(fid)

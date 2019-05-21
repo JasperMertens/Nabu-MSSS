@@ -86,11 +86,18 @@ def main(_):
         pass
     shutil.copyfile(model_cfg_file,
                     os.path.join(FLAGS.expdir, 'test', 'model.cfg'))
-    
+
     # create a link to the model that will be used for testing. Assuming
     # it is stored in the 'full' directory of expdir
-    if not os.path.isdir(os.path.join(FLAGS.expdir, 'test', 'model')):
-        os.symlink(os.path.join(FLAGS.expdir, training_stage, 'model'), os.path.join(FLAGS.expdir, 'test', 'model'))
+    if not os.path.isdir(os.path.join(FLAGS.expdir, training_stage)):
+        model_length = parsed_evaluator_cfg.get('evaluator', 'model_length')
+        os.symlink(os.path.join(FLAGS.expdir, model_length, 'model'),
+                   os.path.join(FLAGS.expdir, 'test', 'model'))
+
+    elif not os.path.isdir(os.path.join(FLAGS.expdir, 'test', 'model')):
+        print(os.path.join(FLAGS.expdir, training_stage, 'model'))
+        os.symlink(os.path.join(FLAGS.expdir, training_stage, 'model'),
+                   os.path.join(FLAGS.expdir, 'test', 'model'))
     
     if FLAGS.computing == 'condor':
     
