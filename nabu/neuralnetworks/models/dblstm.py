@@ -1,10 +1,12 @@
-'''@file dblstm.py
-contains de DBLSTM class'''
+"""@file dblstm.py
+contains de DBLSTM class"""
 
 import tensorflow as tf
 import model
 import math
 from nabu.neuralnetworks.components import layer
+import math
+
 
 
 class DBLSTM(model.Model):
@@ -31,7 +33,7 @@ class DBLSTM(model.Model):
 		else:
 			fac_per_layer = 1.0
 		num_units = [
-			int(math.ceil(num_units_first_layer * (fac_per_layer ** l)))
+			int(math.ceil(num_units_first_layer*(fac_per_layer**l)))
 			for l in range(num_layers)]
 
 		layer_norm = self.conf['layer_norm'] == 'True'
@@ -93,3 +95,4 @@ class DBLSTM(model.Model):
 				output = tf.concat(output, 2)
 
 		return output
+

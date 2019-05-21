@@ -138,7 +138,7 @@ def spec(frames, nfft):
 
     complex_spec = numpy.fft.rfft(frames, nfft)
     return complex_spec
-  
+
 def spec2frames(spec):
     '''
     The reverse of the spec function. Computes an array of
@@ -153,7 +153,7 @@ def spec2frames(spec):
 
     frames = numpy.fft.irfft(spec)
     return frames
-  
+
 def magspec(frames, nfft):
     '''
     Compute the magnitude spectrum of each frame in frames.
@@ -197,7 +197,7 @@ def logmagspec(frames, nfft, norm=False):
         return lms - numpy.max(lms)
     else:
         return lms
-      
+
 def powspec(frames, nfft):
     '''
     Compute the power spectrum of each frame in frames.
@@ -270,6 +270,6 @@ def snip(sig, rate, winlen, winstep):
     #the utterance / number of samples in the frame
     num_frames = int((len(sig)-winlen*rate)/(winstep*rate))
     # cut of the edges to fit the number of frames
-    sig = sig[0:int(num_frames*winstep*rate + winlen*rate)]
+    sig = sig[0:int(round(num_frames*winstep*rate + winlen*rate))]
 
     return sig

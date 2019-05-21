@@ -1,11 +1,10 @@
-'''@file concat.py
-contains the Concat class'''
+"""@file concat.py
+contains the Concat class"""
 
 import tensorflow as tf
 import model
-from nabu.neuralnetworks.components import layer
 import numpy as np
-import pdb
+
 
 class Concat(model.Model):
 	"""Returns a model that simply concatenates inputs"""

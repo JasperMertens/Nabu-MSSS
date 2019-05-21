@@ -185,10 +185,10 @@ def test(expdir):
 
 if __name__ == '__main__':
 
-    tf.app.flags.DEFINE_string('expdir', 'expdir',
-                               'the experiments directory that was used for'
-                               ' training'
-                              )
-    FLAGS = tf.app.flags.FLAGS
+	tf.app.flags.DEFINE_string('expdir', 'expdir',
+							   'the experiments directory that was used for'
+							   ' training'
+							   )
+	FLAGS = tf.app.flags.FLAGS
+	test(FLAGS.expdir)
 
-    test(FLAGS.expdir)

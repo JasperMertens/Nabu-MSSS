@@ -1,13 +1,16 @@
-'''@file encoder_decoder_cnn.py
-contains de EncoderDecoderCNN class'''
+"""@file encoder_decoder_cnn.py
+contains de EncoderDecoderCNN class"""
 
 import tensorflow as tf
 import model
 from nabu.neuralnetworks.components import layer
 import numpy as np
-import pdb
+import copy
+import math
+
 
 class EncoderDecoderCNN(model.Model):
+
 	'''A CNN classifier with encoder-decoder shape
     (https://github.com/tensorflow/models/blob/master/samples/outreach/blogs/segmentation_blogpost/image_segmentation.ipynb)
     '''
@@ -36,6 +39,7 @@ class EncoderDecoderCNN(model.Model):
 		num_centre_layers = int(self.conf['num_centre_layers'])
 
 		layer_norm=self.conf['layer_norm'] == 'True'
+
 
 		if 'activation_fn' in self.conf:
 			if self.conf['activation_fn'] == 'tanh':
@@ -193,6 +197,5 @@ class EncoderDecoderCNN(model.Model):
 						logits = tf.concat([logits, duplicate_logits], 2)
 
 		output = logits
-
 
 		return output
