@@ -56,6 +56,63 @@ def safe_norm(s, axis=-1, keepdims=False, epsilon=1e-7, name=None):
 		x=tf.reduce_sum(tf.square(s), axis=axis, keepdims=keepdims)
 		return tf.sqrt(x + epsilon)
 
+# code from https://github.com/canpeng78/ConvCapsule-tensorflow/blob/master/utils.py
+def patches2d(input_size, kernel_size, strides, padding="VALID"):
+    '''
+    Create 2D patches based on the input size and the kernel size for convolutional routing
+    Return a list of the starting corner and ending corner of patches, and
+    grid size of the patch array
+    '''
+    height = input_size[0]
+    width = input_size[1]
+    kh = kernel_size[0]
+    kw = kernel_size[1]
+    sh = strides[0]
+    sw = strides[1]
+    if padding == "VALID":
+        patches = []
+        gridsz = []
+        col = 0
+        i = 0
+        while i+kh <= height:
+            row = 0
+            j = 0
+            while j+kw <= width:
+                patches.append([i, j, i+kh, j+kw])
+                j += sw
+                row += 1
+            if i == 0:
+                gridsz.append(row)
+            i += sh
+            col += 1
+        gridsz.insert(0, col)
+        return patches, gridsz
+    elif padding == "SAME":
+        ns_h = math.ceil(height / sh)
+        ns_w = math.ceil(width / sw)
+        padded_h = ns_h * sh + kh
+        padded_w = ns_w * sw + kw
+        strtpd_h = (padded_h - height) // 2
+        strtpd_w = (padded_w - width) // 2
+        patches = []
+        gridsz = []
+        col = 0
+        i = 0
+        while i+kh < padded_h:
+            row = 0
+            j = 0
+            while j+kw < padded_w:
+                patches.append([int(max(i-strtpd_h, 0)), int(max(j-strtpd_w, 0)),
+                                int(min(i-strtpd_h+kh, height)), int(min(j-strtpd_w+kw, width))])
+                j += sw
+                row += 1
+            if i == 0:
+                gridsz.append(row)
+            i += sh
+            col += 1
+        gridsz.insert(0, col)
+	return patches, gridsz
+
 
 class VoteTranformInitializer(tf.keras.initializers.Initializer):
 

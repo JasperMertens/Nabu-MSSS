@@ -8,6 +8,6 @@ from . import model, model_factory, run_multi_model, dblstm, \
   capsnet, dbr_capsnet, dbgru, leaky_dbgru, dbresetlstm, dlstm,\
   dresetlstm, leaky_dlstm, encoder_decoder_cnn, f_cnn, cnn_2d,\
   conv2d_capsnet, enc_dec_capsnet, conv2d_caps_sep, seg_caps,\
-  seg_cnn, seg_caps_lstm
+  seg_cnn, seg_caps_lstm, seg_cnn_lstm, seg_caps_lstm_pooled
 
     

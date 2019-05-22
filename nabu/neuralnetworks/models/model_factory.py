@@ -5,7 +5,8 @@ from . import dblstm, plain_variables, linear, concat, leaky_dblstm, sigmoid,rel
   multi_averager, feedforward, leaky_dblstm_iznotrec, leaky_dblstm_notrec, dbrnn,\
   capsnet, dbr_capsnet, dbgru, leaky_dbgru, dbresetlstm, dlstm, dresetlstm,\
   leaky_dlstm, encoder_decoder_cnn, f_conv_capsnet, f_cnn, cnn_2d, conv2d_capsnet, \
-    enc_dec_capsnet, enc_dec_capsnet_xl, conv2d_caps_sep, seg_caps, seg_cnn, seg_caps_lstm
+    enc_dec_capsnet, enc_dec_capsnet_xl, conv2d_caps_sep, seg_caps, seg_cnn, seg_caps_lstm, \
+    seg_cnn_lstm, seg_caps_lstm_pooled
 
 def factory(architecture):
     """get a model class
@@ -74,5 +75,9 @@ def factory(architecture):
         return seg_cnn.SegCNN
     elif architecture == 'seg_caps_lstm':
         return seg_caps_lstm.SegCapsLSTM
+    elif architecture == 'seg_caps_lstm_pooled':
+        return seg_caps_lstm_pooled.SegCapsLSTMPooled
+    elif architecture == 'seg_cnn_lstm':
+        return seg_cnn_lstm.SegCNNLSTM
     else:
         raise Exception('undefined architecture type: %s' % architecture)

@@ -905,19 +905,25 @@ class Conv2DCapsule(tf.layers.Layer):
         if capsule_dim_in is None:
             raise ValueError('input capsules dimension must be defined')
 
-        # self.conv_weights = self.add_variable(
-        #     name='conv_weights',
-        #     dtype=self.dtype,
-        #     shape=[num_capsules_in, self.kernel_size[0], self.kernel_size[1],
-        #            capsule_dim_in, self.num_capsules * self.capsule_dim],
-        #     initializer=self.kernel_initializer)
-
-        self.shared_weights = self.add_variable(
-            name='shared_weights',
+        self.conv_weights = self.add_variable(
+            name='conv_weights',
             dtype=self.dtype,
-            shape=[self.kernel_size[0], self.kernel_size[1],
+            shape=[num_capsules_in, self.kernel_size[0], self.kernel_size[1],
                    capsule_dim_in, self.num_capsules * self.capsule_dim],
             initializer=self.kernel_initializer)
+
+        self.bias = self.add_variable(
+            name='bias',
+            dtype=self.dtype,
+            shape=[self.num_capsules, self.capsule_dim],
+            initializer=None)
+
+        # self.shared_weights = self.add_variable(
+        #     name='shared_weights',
+        #     dtype=self.dtype,
+        #     shape=[self.kernel_size[0], self.kernel_size[1],
+        #            capsule_dim_in, self.num_capsules * self.capsule_dim],
+        #     initializer=self.kernel_initializer)
 
         # self.kernel = self.add_variable(
         #     name='kernel',
@@ -982,10 +988,10 @@ class Conv2DCapsule(tf.layers.Layer):
         '''
 
         #compute the predictions
-        predictions, logits = self.shared_predict(inputs)
+        predictions, logits, bias = self.loop_predict(inputs)
 
         #cluster the predictions
-        outputs = self.cluster(predictions, logits)
+        outputs = self.cluster(predictions, logits, bias)
 
         return outputs
 
@@ -1314,19 +1320,33 @@ class Conv2DCapsule(tf.layers.Layer):
                                      [batch_size, -1, freq_out,
                                       num_capsule_in,
                                       self.num_capsules, self.capsule_dim])
-
-            # tile the logits for each shared dimension (batch, time, frequency)
-            with tf.name_scope('tile_logits'):
+            # tile the logits and bias for each shared dimension (batch, time, frequency)
+            with tf.name_scope('tile_logits_bias'):
                 logits = self.logits
+                bias = self.bias
                 for i in range(shared):
-                    if predictions.shape[shared-i-1].value is None:
-                        shape = tf.shape(predictions)[shared-i-1]
+                    if predictions.shape[shared - i - 1].value is None:
+                        shape = tf.shape(predictions)[shared - i - 1]
                     else:
-                        shape = predictions.shape[shared-i-1].value
-                    tile = [shape] + [1]*len(logits.shape)
+                        shape = predictions.shape[shared - i - 1].value
+                    tile = [shape] + [1] * len(logits.shape)
                     logits = tf.tile(tf.expand_dims(logits, 0), tile)
+                    bias = tf.tile(tf.expand_dims(bias, 0), tile)
 
-        return predictions, logits
+            return predictions, logits, bias
+
+        #     # tile the logits for each shared dimension (batch, time, frequency)
+        #     with tf.name_scope('tile_logits'):
+        #         logits = self.logits
+        #         for i in range(shared):
+        #             if predictions.shape[shared-i-1].value is None:
+        #                 shape = tf.shape(predictions)[shared-i-1]
+        #             else:
+        #                 shape = predictions.shape[shared-i-1].value
+        #             tile = [shape] + [1]*len(logits.shape)
+        #             logits = tf.tile(tf.expand_dims(logits, 0), tile)
+        #
+        # return predictions, logits
 
 
     def conv2d_matmul_predict(self, inputs):
@@ -1529,7 +1549,7 @@ class Conv2DCapsule(tf.layers.Layer):
 
         return predictions, logits
 
-    def cluster(self, predictions, logits):
+    def cluster(self, predictions, logits, bias):
         '''cluster the predictions into output capsules
         args:
             predictions: the predicted output capsules
@@ -1548,6 +1568,7 @@ class Conv2DCapsule(tf.layers.Layer):
                     w = self.probability_fn(l)
                     caps = tf.reduce_sum(
                         tf.expand_dims(w, -1)*predictions, -3)
+                    caps = caps + bias
 
                 return caps, w
 
@@ -2189,6 +2210,333 @@ class EncDecCapsule(tf.layers.Layer):
                     w = self.probability_fn(l)
                     caps = tf.reduce_sum(
                         tf.expand_dims(w, -1)*predictions, -3)
+                    caps = tf.cond(tf.cast(self.use_bias, 'bool'),
+                                   lambda: caps + bias,
+                                   lambda: caps)
+
+                return caps, w
+
+            #define body of the while loop
+            def body(l):
+                '''body'''
+
+                caps, _ = m_step(l)
+                caps = self.activation_fn(caps)
+
+                #compare the capsule contents with the predictions
+                similarity = tf.reduce_sum(
+                    predictions*tf.expand_dims(caps, -3), -1)
+
+                return l + similarity
+
+            #get the final logits with the while loop
+            lo = tf.while_loop(
+                lambda l: True,
+                body, [logits],
+                maximum_iterations=self.routing_iters)
+
+            #get the final output capsules
+            capsules, _ = m_step(lo)
+            capsules = self.activation_fn(capsules)
+
+        return capsules
+
+    def compute_output_shape(self, input_shape):
+        '''compute the output shape'''
+
+        if input_shape[-3].value is None:
+            raise ValueError(
+                'The number of frequencies must be defined, but saw: %s'
+                % input_shape)
+
+        if input_shape[-2].value is None:
+            raise ValueError(
+                'The number of capsules must be defined, but saw: %s'
+                % input_shape)
+        if input_shape[-1].value is None:
+            raise ValueError(
+                'The capsule dimension must be defined, but saw: %s'
+                % input_shape)
+
+        num_freq_in = input_shape[-3].value
+        num_freq_out = num_freq_in
+        #if no padding:
+        #num_freq_out = (num_freq_in-self.kernel_size+1)/self.stride
+
+        return input_shape[:-3].concatenate(
+            [num_freq_out, self.num_capsules, self.capsule_dim])
+
+class EncDecCapsulePooled(tf.layers.Layer):
+    '''a capsule layer'''
+
+    def __init__(
+            self, num_capsules, capsule_dim,
+            kernel_size=(9, 9), strides=(1, 1),
+            padding='SAME',
+            pool_filter=(1, 1),
+            transpose=False,
+            routing_iters=3,
+            use_bias=False,
+            shared=True,
+            activation_fn=None,
+            probability_fn=None,
+            activity_regularizer=None,
+            kernel_initializer=None,
+            logits_initializer=None,
+            trainable=True,
+            name=None,
+            **kwargs):
+
+        '''Capsule layer constructor
+        args:
+            num_capsules: number of output capsules
+            capsule_dim: output capsule dimsension
+            kernel_size: size of convolutional kernel
+            kernel_initializer: an initializer for the prediction kernel
+            logits_initializer: the initializer for the initial logits
+            routing_iters: the number of routing iterations (default: 5)
+            activation_fn: a callable activation function (default: squash)
+            probability_fn: a callable that takes in logits and returns weights
+                (default: tf.nn.softmax)
+            activity_regularizer: Regularizer instance for the output (callable)
+            trainable: wether layer is trainable
+            name: the name of the layer
+        '''
+
+        super(EncDecCapsulePooled, self).__init__(
+            trainable=trainable,
+            name=name,
+            activity_regularizer=activity_regularizer,
+            **kwargs)
+
+        self.num_capsules = num_capsules
+        self.capsule_dim = capsule_dim
+        self.kernel_size = kernel_size
+        self.strides = strides
+        self.padding = padding
+        self.pool_filter = pool_filter
+        self.transpose = transpose
+        self.kernel_initializer = kernel_initializer or capsule_initializer()
+        self.logits_initializer = logits_initializer or tf.zeros_initializer()
+        self.routing_iters = routing_iters
+        self.use_bias = use_bias
+        self.sharing_weights = shared
+        self.activation_fn = activation_fn or ops.squash
+        self.probability_fn = probability_fn or tf.nn.softmax
+
+    def build(self, input_shape):
+        '''creates the variables of this layer
+        args:
+            input_shape: the shape of the input
+        '''
+
+        # pylint: disable=W0201
+
+        # input dimensions
+        num_freq_in = input_shape[-3].value
+        num_capsules_in = input_shape[-2].value
+        capsule_dim_in = input_shape[-1].value
+        # num_freq_out = num_freq_in
+        # without padding:
+        # num_freq_out = (num_freq_in-self.kernel_size+1)/self.stride
+        k = self.kernel_size[0] / 2
+
+        if num_capsules_in is None:
+            raise ValueError('number of input capsules must be defined')
+        if capsule_dim_in is None:
+            raise ValueError('input capsules dimension must be defined')
+
+        if self.transpose:
+            if self.sharing_weights:
+                weights_shape = [self.kernel_size[0], self.kernel_size[1],
+                               self.num_capsules * self.capsule_dim, capsule_dim_in]
+            else:
+                weights_shape = [num_capsules_in, self.kernel_size[0], self.kernel_size[1],
+                                 self.num_capsules * self.capsule_dim, capsule_dim_in]
+            self.conv_weights = self.add_variable(
+                        name='conv_trans_weights',
+                        dtype=self.dtype,
+                        shape=weights_shape,
+                        initializer=self.kernel_initializer)
+        else:
+            if self.sharing_weights:
+                weights_shape = [self.kernel_size[0], self.kernel_size[1],
+                                 capsule_dim_in, self.num_capsules * self.capsule_dim]
+            else:
+                weights_shape = [num_capsules_in, self.kernel_size[0], self.kernel_size[1],
+                           capsule_dim_in, self.num_capsules * self.capsule_dim]
+            self.conv_weights = self.add_variable(
+                    name='conv_weights',
+                    dtype=self.dtype,
+                    shape=weights_shape,
+                    initializer=self.kernel_initializer)
+        pool_size = self.pool_filter[0]*self.pool_filter[1]
+        self.logits = self.add_variable(
+            name='init_logits',
+            dtype=self.dtype,
+            shape=[pool_size*num_capsules_in, self.num_capsules],
+            initializer=self.logits_initializer,
+            trainable=False
+        )
+
+        self.bias = tf.zeros(shape=[self.num_capsules, self.capsule_dim])
+        if self.use_bias:
+            self.bias = self.add_variable(
+            name='bias',
+            dtype=self.dtype,
+            shape=[self.num_capsules, self.capsule_dim],
+            initializer=None)
+
+        super(EncDecCapsulePooled, self).build(input_shape)
+
+    # pylint: disable=W0221
+    def call(self, inputs, t_out_tensor=None, freq_out=None):
+        '''
+        apply the layer
+        args:
+            inputs: the inputs to the layer. the final two dimensions are
+                num_capsules_in and capsule_dim_in
+        returns the output capsules with the last two dimensions
+            num_capsules and capsule_dim
+        '''
+
+        # convolutional routing
+        outputs = self.loop_predict(inputs, t_out_tensor, freq_out)
+
+        return outputs
+
+    def loop_predict(self, inputs, t_out_tensor, freq_out):
+        '''
+        compute the predictions for the output capsules and initialize the
+        routing logits
+        args:
+            inputs: the inputs to the layer. the final two dimensions are
+                num_capsules_in and capsule_dim_in
+                expects inputs of dimension [B, T, F, N_in, D_in]
+        returns: the output capsule predictions
+        '''
+
+        with tf.name_scope('predict'):
+
+            batch_size = inputs.shape[0].value
+            num_freq_in = inputs.shape[-3].value
+        if not self.transpose:
+            freq_out = int(np.ceil(float(num_freq_in) / float(self.strides[1])))
+        num_capsule_in = inputs.shape[-2].value
+        capsule_dim_in = inputs.shape[-1].value
+
+        # number of shared dimensions
+        rank = len(inputs.shape)  # normally rank=5
+        shared = rank - 2  # normally shared=3
+
+        convs = []
+        for i in range(0, num_capsule_in):
+            with tf.name_scope('conv_2d%d' % i):
+                slice = inputs[:, :, :, i, :]
+                if self.sharing_weights:
+                    conv_weights = self.conv_weights
+                else:
+                    conv_weights = self.conv_weights[i,:,:,:,:]
+                if self.transpose:
+                    conv = tf.nn.conv2d_transpose(slice, conv_weights,
+                                                  output_shape=[batch_size, t_out_tensor, freq_out,
+                                                                self.capsule_dim * self.num_capsules],
+                                                  strides=[1, self.strides[0], self.strides[1], 1],
+                                                  padding=self.padding)
+                else:
+                    conv = tf.nn.conv2d(slice, conv_weights,
+                                        strides=[1, self.strides[0], self.strides[1], 1],
+                                        padding=self.padding)
+            expanded = tf.expand_dims(conv, 3)
+            convs.append(expanded)
+
+        prev_slice = tf.concat(convs, 3)
+
+        # reshape to [B, T, F, N_in, N_out, D_out]
+        predictions = tf.reshape(prev_slice,
+                                 [batch_size, -1, freq_out,
+                                  num_capsule_in,
+                                  self.num_capsules, self.capsule_dim])
+
+        # tile the logits and bias for each shared dimension (batch, time, frequency)
+        with tf.name_scope('tile_logits_bias'):
+            logits = self.logits
+            bias = self.bias
+            for i in range(shared):
+                if predictions.shape[shared - i - 1].value is None:
+                    shape = tf.shape(predictions)[shared - i - 1]
+                else:
+                    shape = predictions.shape[shared - i - 1].value
+                tile = [shape] + [1] * len(logits.shape)
+                logits = tf.tile(tf.expand_dims(logits, 0), tile)
+                if self.use_bias:
+                    bias = tf.tile(tf.expand_dims(bias, 0), tile)
+
+        # with tf.name_scope('group_freqs'):
+        #     # create a filter that selects the values of the frequencies
+        #     # within the convolution kernel
+        #     tile_filter = np.zeros(shape=[self.kernel_size[0], self.kernel_size[1],
+        #                                   n_in * d_in, self.kernel_size[0] * self.kernel_size[1]],
+        #                            dtype=self.dtype)
+        #     for i in range(self.kernel_size[1]):
+        #         for j in range(self.kernel_size[0]):
+        #             tile_filter[i, j, :, i * self.kernel_size[1] + j] = 1
+        #     tile_filter_op = tf.constant(tile_filter)
+        #
+        #     # Convolution with padding
+        #     inputs = tf.nn.depthwise_conv2d(inputs, tile_filter_op,
+        #                                     strides=[1, self.strides[0], self.strides[0], 1],
+        #                                     padding='SAME')
+        #     # output_shape = tf.shape(inputs)
+        #     # output_shape[1] should equal num_freq_out if no padding
+        #     # reshape back to [B, T, F_out, N_in, D_in, W_f]
+        #     inputs = tf.reshape(inputs, shape=[batch_size, -1, num_freq_out,
+        #                                        n_in, d_in, self.kernel_size[0] * self.kernel_size[1]])
+
+        # code from https://github.com/canpeng78/ConvCapsule-tensorflow/blob/master/
+        # Do routing convolutionally
+        pool_strides = self.pool_filter
+        inputshape = inputs.shape.as_list()
+        patches, gridsz = ops.patches2d(inputshape[1:], self.pool_filter, pool_strides, self.padding)
+        out_caplayer = []
+        for patch in patches:
+            capsules = []
+            for i in range(0, num_capsule_in):
+                cap = predictions[:,:,:,i,:,:]
+                capptch = cap[:, patch[0]:patch[2], patch[1]:patch[3], :, :]
+                capshape = capptch.get_shape().as_list()
+                capptch = tf.reshape(capptch, shape=(capshape[0], -1, capshape[-2], capshape[-1]))
+                capsules.append(capptch)
+            capsules = tf.concat(capsules, 1) # shape [B, capsules_in_patch, N_out, D_out]
+            out_capsule = tf.expand_dims(self.cluster(capsules, logits, bias),
+                                         1)  # shape [B, 1, N_out, D_out]
+            out_caplayer.append(out_capsule)
+        out_caplayer = tf.concat(out_caplayer, 1)
+        out_caplayer = tf.reshape(out_caplayer, shape=(
+                tf.shape(out_caplayer)[0], gridsz[0], gridsz[1], self.num_capsules, self.capsule_dim))
+
+        return out_caplayer
+
+
+    def cluster(self, predictions, logits, bias):
+        '''cluster the predictions into output capsules
+        args:
+            predictions: the predicted output capsules
+            logits: the initial routing logits
+        returns:
+            the output capsules
+        '''
+
+        with tf.name_scope('cluster'):
+
+            #define m-step
+            def m_step(l):
+                '''m step'''
+                with tf.name_scope('m_step'):
+                    #compute the capsule contents
+                    w = self.probability_fn(l)
+                    caps = tf.reduce_sum(
+                        tf.expand_dims(w, -1)*predictions, -3) # shape [B, N_out, D_out]
                     caps = tf.cond(tf.cast(self.use_bias, 'bool'),
                                    lambda: caps + bias,
                                    lambda: caps)
@@ -3686,7 +4034,7 @@ class EncDecCNN(tf.layers.Layer):
 
             if self.max_pool_filter != (1, 1):
                 outputs = tf.layers.max_pooling2d(outputs, self.max_pool_filter,
-                                                  strides=self.max_pool_filter, padding='valid')
+                                                  strides=self.max_pool_filter, padding=self.padding)
 
             return outputs
 

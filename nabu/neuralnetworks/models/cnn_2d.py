@@ -25,7 +25,7 @@ class CNN2D(model.Model):
         '''
 
         num_filters = int(self.conf['num_filters'])
-        kernel_size = int(self.conf['conv_kernel_size'])
+        kernel_size = map(int, self.conf['conv_kernel_size'].split(' '))
         stride = int(self.conf['stride'])
 
         #code not available for multiple inputs!!

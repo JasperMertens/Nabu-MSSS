@@ -39,6 +39,8 @@ class SegCapsLSTM(model.Model):
         num_filters = self.conf['num_filters']
         num_capsules_lst = map(int, self.conf['num_capsules_lst'].split(' '))
         capsule_dim_lst = map(int, self.conf['capsule_dim_lst'].split(' '))
+        t_reduction_rate = int(self.conf['t_reduction_rate'])
+        f_reduction_rate = int(self.conf['f_reduction_rate'])
         probability_fn = None
         if leaky_softmax:
             probability_fn = ops.leaky_softmax
@@ -80,7 +82,12 @@ class SegCapsLSTM(model.Model):
                                                routing_iters=3, use_bias=use_bias, shared=shared, name='conv_cap_2_1')(primary_caps)
 
             # Layer 2: Convolutional Capsule
-            conv_cap_2_2 = layer.EncDecCapsule(kernel_size=kernel_size, num_capsules=num_capsules_lst[2], capsule_dim=capsule_dim_lst[2], strides=(2,2), padding='SAME',
+            strides = [1,1]
+            if (t_reduction_rate == 1):
+                strides[0] = 2
+            if (f_reduction_rate == 1):
+                strides[1] = 2
+            conv_cap_2_2 = layer.EncDecCapsule(kernel_size=kernel_size, num_capsules=num_capsules_lst[2], capsule_dim=capsule_dim_lst[2], strides=strides, padding='SAME',
                                                routing_iters=3, use_bias=use_bias, shared=shared, name='conv_cap_2_2')(conv_cap_2_1)
 
             # Layer 3: Convolutional Capsule
@@ -111,8 +118,13 @@ class SegCapsLSTM(model.Model):
             # Layer 2 Up: Deconvolutional Capsule
             t_out = tf.shape(conv_cap_2_1)[1]
             freq_out = conv_cap_2_1.shape[2]
+            strides = [1, 1]
+            if (t_reduction_rate == 1):
+                strides[0] = 2
+            if (f_reduction_rate == 1):
+                strides[1] = 2
             deconv_cap_2_1 = layer.EncDecCapsule(kernel_size=kernel_size, num_capsules=num_capsules_lst[8], capsule_dim=capsule_dim_lst[8], transpose=True,
-                                                 strides=(2, 2), padding='SAME', routing_iters=3, use_bias=use_bias, shared=shared,
+                                                 strides=strides, padding='SAME', routing_iters=3, use_bias=use_bias, shared=shared,
                                                 name='deconv_cap_2_1')(deconv_cap_1_2, t_out, freq_out)
 
             # Skip connection
