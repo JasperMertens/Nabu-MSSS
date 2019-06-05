@@ -65,7 +65,7 @@ class SegCapsLSTMPooled(model.Model):
             # Convolution
             batch_size = logits.shape[0].value
             num_freq = logits.shape[2].value
-            logits.set_shape([batch_size, 100, num_freq])
+            #logits.set_shape([batch_size, 100, num_freq])
             logits = tf.expand_dims(logits, -1)
 
             # Layer 1: Just a conventional Conv2D layer

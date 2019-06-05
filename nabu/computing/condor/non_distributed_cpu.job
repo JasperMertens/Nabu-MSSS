@@ -1,8 +1,8 @@
 # Normal execution
 Universe         = vanilla
 # need enough RAM to store the parameters
-RequestMemory    = 30G
-#RequestMemory    = 63G
+#RequestMemory    = 30G
+RequestMemory    = 15G
 requestCpus      = 8
 #request two days of wall time
 +RequestWalltime = 172800

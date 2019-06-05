@@ -61,7 +61,8 @@ class Conv2DCapsNet(model.Model):
                     output_dim,
                     kernel_size,
                     stride,
-                    padding='SAME'
+                    padding='SAME',
+                    activation=tf.nn.relu
                 )
 
                 primary_capsules = tf.reshape(primary_capsules,

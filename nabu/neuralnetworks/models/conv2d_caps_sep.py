@@ -45,16 +45,26 @@ class Conv2DCapsSep(model.Model):
                     tf.shape(inputs),
                     stddev=float(self.conf['input_noise']))
 
+            output = tf.identity(inputs, 'inputs')
+            input_seq_length = tf.identity(input_seq_length, 'input_seq_length')
+            # Include channel dimension
+            batch_size = output.shape[0].value
+            num_freq = output.shape[2].value
+            output_dim = num_capsules * capsule_dim
+            output = tf.expand_dims(output, -1)
+
+            # Conv1 ReLU
+            #conv1 = tf.layers.conv2d(
+            #    output,
+            #    output_dim,
+            #    kernel_size,
+            #    stride,
+            #    padding='SAME',
+            #    activation=tf.nn.relu
+            #)
+
             # Primary capsule
             with tf.variable_scope('primary_capsule'):
-                output = tf.identity(inputs, 'inputs')
-                input_seq_length = tf.identity(input_seq_length, 'input_seq_length')
-
-                # Include frequency dimension
-                batch_size = output.shape[0].value
-                num_freq = output.shape[2].value
-                output_dim = num_capsules * capsule_dim
-                output = tf.expand_dims(output,-1)
 
                 primary_capsules = tf.layers.conv2d(
                     output,
@@ -79,7 +89,7 @@ class Conv2DCapsSep(model.Model):
             for l in range(1, int(self.conf['num_layers'])):
                 with tf.variable_scope('layer%d' % l):
                     # a capsule layer
-                    conv2d_caps_layer = layer.Conv2DCapsSep(num_capsules=num_capsules,
+                    conv2d_caps_layer = layer.Conv2DCapsGridRouting(num_capsules=num_capsules,
                                                capsule_dim=capsule_dim,
                                                kernel_size=kernel_size,
                                                 strides=(stride,stride),
